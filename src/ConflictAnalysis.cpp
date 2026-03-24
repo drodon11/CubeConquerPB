@@ -54,9 +54,8 @@ void Solver::conflictAnalysisAndBackjump (const WConstraint& falsifiedCtr) {
 
         while ( slackCCtr < 0 ) { // Pop literals from model until slack becomes positive
             if ( model.currentDecisionLevel() == 0 ) { // 1599*.lp
-                cout << "it's still conflicting after popping all literals in trail........" << endl;
-                cout << "ERROR!!!" << endl;
-                exit(-1);
+	      //cout << "it's still conflicting after popping all literals in trail........" << endl;
+	      return;
             }
             assert( slackCCtr == slack(cCtr) );
             rCtrReason = model.getReasonAtTop();
@@ -151,7 +150,7 @@ void Solver::conflictAnalysisAndBackjump (const WConstraint& falsifiedCtr) {
         // since all coefficients should be >= 1
         if (applyCutAgain) {
 	  overflow = applyCut( confVar, cCtr, rCtr, cut, clash, isInconsistentCut );
-	  // cout << "Apply cut (AGAIN) to eliminate " << confVar << " between:" << endl; printConstraint(rCtr);
+	  // cout << "Apply cut (AGAIN) to eliminate " << confVar << " between:" << endl; 
 	  // printConstraint(cCtr);
 	  // printConstraint(rCtr);
 	  // cout << "Gives ";

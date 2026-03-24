@@ -12,7 +12,7 @@ MPICC           = mpic++
 CFLAGS          = -std=c++20 -O3 -Wall  -DNDEBUG
 
 # for checking correctness
-#CFLAGS          = -std=c++20 -O3 -Wall -static 
+#CFLAGS          = -std=c++20 -O3 
 
 
 # ifndef d
