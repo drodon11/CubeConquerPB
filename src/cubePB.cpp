@@ -85,6 +85,7 @@ void generate_cubes_rec(Solver& solver,
     // Number of assigned variables before temporary lookaheads
     int baseAssigned = assigned;
 
+    cout << "Start looking for variable" << endl;
     // Evaluate every currently undefined variable
     for (int v : vars) {
         if (!solver.isUndefLit(v)) continue;
@@ -95,6 +96,7 @@ void generate_cubes_rec(Solver& solver,
         if (!okPos) {
             // Conflict during lookahead: assign a large score
             eval_pos = nVars + 10;
+	    cout << "Conf for var " << v << endl;
         } else {
             // Number of newly assigned variables caused by propagation
             eval_pos = solver.assignedVars() - baseAssigned;
@@ -107,6 +109,7 @@ void generate_cubes_rec(Solver& solver,
         if (!okNeg) {
             // Conflict during lookahead: assign a large score
             eval_neg = nVars + 10;
+	    cout << "Conf (neg) for var " << v << endl;
         } else {
             // Number of newly assigned variables caused by propagation
             eval_neg = solver.assignedVars() - baseAssigned;
@@ -150,6 +153,7 @@ void generate_cubes_rec(Solver& solver,
         secondLit =  bestVar;
     }
 
+    cout << "Choose lit " << firstLit << endl;
     // Explore first branch
     current.push_back(firstLit);
     bool ok = solver.assumeAndPropagate(firstLit);
@@ -390,17 +394,6 @@ int main(int argc, char** argv) {
 
         // Receive results and dynamically send more cubes
         while (!sat_found && finished_workers < size - 1) {
-	    if (double((clock() - last_printed_stats)) / CLOCKS_PER_SEC > 10) {
-	      cout << string(30,'=') << endl;
-	      last_printed_stats = clock();
-	      for (int w = 1; w < size; ++w){
-		cout << "Worker " << w << ":";
-		if (cube_of_worker[w] == -1) cout << "idle" << endl;
-		else cout << "cube " << cube_of_worker[w] << "\t(" << double(clock() - time_of_worker[w])/CLOCKS_PER_SEC << " s.)" << endl;
-	      }
-	      cout << string(30,'=') << endl;
-	    }
- 
 
 	    int msg[2];
             MPI_Status status;
