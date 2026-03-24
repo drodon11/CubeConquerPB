@@ -85,7 +85,6 @@ void generate_cubes_rec(Solver& solver,
     // Number of assigned variables before temporary lookaheads
     int baseAssigned = assigned;
 
-    cout << "Start looking for variable" << endl;
     // Evaluate every currently undefined variable
     for (int v : vars) {
         if (!solver.isUndefLit(v)) continue;
@@ -153,7 +152,6 @@ void generate_cubes_rec(Solver& solver,
         secondLit =  bestVar;
     }
 
-    cout << "Choose lit " << firstLit << endl;
     // Explore first branch
     current.push_back(firstLit);
     bool ok = solver.assumeAndPropagate(firstLit);
