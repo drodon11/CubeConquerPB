@@ -40,7 +40,7 @@ void Solver::conflictAnalysisAndBackjump (const WConstraint& falsifiedCtr) {
     WConstraint rCtr; // (r)easonConstraint
     WConstraint cCtr = falsifiedCtr; // (c)onflictingConstraint
     cCtr.sortByIncreasingVariable();
-
+    
     Reason rCtrReason;
     long long slackCCtr = slack(cCtr); // slack (C)onflicting Constraint
     assert( slackCCtr < 0);
@@ -126,6 +126,12 @@ void Solver::conflictAnalysisAndBackjump (const WConstraint& falsifiedCtr) {
         if (enoughCut) {
             applyCutAgain = false;
             assert(cut.getConstant() > 0); //We have learned a tautology which should not be the case on Conflict Analysis
+
+	    // cout << "Apply cut to eliminate " << confVar << " between:" << endl;
+	    // printConstraint(cCtr);
+	    // printConstraint(rCtr);
+	    // cout << "Gives ";
+	    // printConstraint(cut);	    
         }
 
         else {
@@ -143,7 +149,14 @@ void Solver::conflictAnalysisAndBackjump (const WConstraint& falsifiedCtr) {
 
         //We are doing a cut with a clause. In case that we get Overflow with that we are going to get an Overflow with every constraint 
         // since all coefficients should be >= 1
-        if (applyCutAgain) overflow = applyCut( confVar, cCtr, rCtr, cut, clash, isInconsistentCut );
+        if (applyCutAgain) {
+	  overflow = applyCut( confVar, cCtr, rCtr, cut, clash, isInconsistentCut );
+	  // cout << "Apply cut (AGAIN) to eliminate " << confVar << " between:" << endl; printConstraint(rCtr);
+	  // printConstraint(cCtr);
+	  // printConstraint(rCtr);
+	  // cout << "Gives ";
+	  // printConstraint(cut);
+	}
         assert(overflow or constraintIsFalse(cut)); 
         increaseScoresOfVars(rCtr);
         assert( not overflow );
@@ -159,11 +172,11 @@ void Solver::conflictAnalysisAndBackjump (const WConstraint& falsifiedCtr) {
 
         cCtr = cut;
         int dlToBackjumpTo = clash?lowestDLAtWhichConstraintPropagatesOrConflicting(cCtr):-1;
-
+	
         if (dlToBackjumpTo != -1) {  // backjump!
+            if (cCtr.isClause()) {  // if the conflicting is clause 	      
 
-            if (cCtr.isClause()) {  // if the conflicting is clause 
-                assert(cCtr.getSize() > 0);
+	      assert(cCtr.getSize() > 0);
                 vector<int> lemma;
                 int posUIP = -1; int numUIP = 0; int maxDL = -1;
 
@@ -176,15 +189,31 @@ void Solver::conflictAnalysisAndBackjump (const WConstraint& falsifiedCtr) {
                     lemma.push_back(lit);
                 }
 
+		if (numUIP != 1) {
+		  assert(numUIP > 1); // This can only happen if clause is conflicting at some previous DL
+		                      // (due to lowestDLAtWhichClausePropagatesOrConflicting)
+		  assert(dlToBackjumpTo < model.currentDecisionLevel());
+		  backjumpToDL(dlToBackjumpTo);
+		  assert(slack(cCtr) < 0);
+		  slackCCtr = slack(cCtr);
+		  continue;
+		}
                 assert(numUIP == 1);
                 swap(lemma[0],lemma[posUIP]);
                 lemmaShortening(lemma);
                 int LBD = computeLBD(lemma);
                 backjumpToDL(dlToBackjumpTo);
+
                 conflict = false;
 
                 if (lemma.size() == 1) {  // lemma is unit
-                    setTrueDueToReason(lemma[0],noReason());
+		  if (model.isFalseLit(lemma[0])) { // Inconsistent unit clause
+		    assert(model.currentDecisionLevel() == 0);
+		    conflict = true;
+		    return;
+		  }
+		  else
+		    setTrueDueToReason(lemma[0],noReason());
                 }
                 else if (lemma.size() == 2) {  // lemma is binary clause
                     addBinaryClause(lemma[0],lemma[1]);
@@ -254,8 +283,7 @@ int Solver::lowestDLAtWhichClausePropagatesOrConflicting (const WConstraint & c)
     return secondMaxDL;
   }
   else if (maxDL != model.currentDecisionLevel()) {
-    cout << "WARNING: found a clause that is conflicting at some previous level" << endl;
-    cout << "Code in conflict analysis assumes that if lemma to be learned is a clause this does not happen" << endl;
+    // Found a clause that is conflicting at some previous level
     return maxDL; // clause conflicting at maxDL
   }
   else return -1;
@@ -618,14 +646,14 @@ bool Solver::applyCut ( int var, const WConstraint & c1, const WConstraint & c2,
   newConstant += k1 * c1.getConstant() + k2 * c2.getConstant();
 
   if (newConstant<=0) {
-      cout << endl <<"applyCut found a tautology " << endl; 
-      return true;
+    //cout << endl <<"applyCut found a tautology " << endl; 
+    return true;
   }
   
   if (newCoeffs.size()==0) { // inconsistency:  0 >= 1
     cut = WConstraint(false); 
     isInconsistentCut = true;
-    cout << endl << "applyCut found inconsistency cut:  0 >= 1" << endl; 
+    //cout << endl << "applyCut found inconsistency cut:  0 >= 1" << endl; 
     return false; 
   } 
 

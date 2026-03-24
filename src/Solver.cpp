@@ -94,9 +94,9 @@ void Solver::addObjectiveFunction (bool minimize, const vector<int>& coeffs, con
 
   if (abs(addedConstantToObjective) > INT_MAX) {cout << "Initializing objective: Too LARGE new obj rhs = " << addedConstantToObjective << endl; exit(0);}
 
-  cout << "objective is" << endl << "Maximize: ";
-  for (auto p : objective) cout << p.first << " * v" << p.second << " ";
-  cout << "+ " << addedConstantToObjective << endl;
+  // cout << "objective is" << endl << "Maximize: ";
+  // for (auto p : objective) cout << p.first << " * v" << p.second << " ";
+  // cout << "+ " << addedConstantToObjective << endl;
   
   // Compute best polarity for each variable according to objective function
   computeBestPolarityForVarInObjectiveFunction();
@@ -127,8 +127,8 @@ void Solver::solve (int tlimit) {
   timeLimit = tlimit;
   cout.setf(ios::fixed);
   cout.precision(2);
-  cout << "solve.....BT0 " << BT0 << endl;
-  cout << "init stats.numOfSolutionsFound = " << stats.numOfSolutionsFound << endl;
+  // cout << "solve.....BT0 " << BT0 << endl;
+  // cout << "init stats.numOfSolutionsFound = " << stats.numOfSolutionsFound << endl;
 
   // Might be conflicting because of (incomplete) propagation of input constraints
   if (conflict) {updateStatusConflictAtDLZero(); return; }
@@ -139,7 +139,7 @@ void Solver::solve (int tlimit) {
   WConstraint solutionImprovingCtr = WConstraint(objective,0);
 
   strat.reportInitialSizes(constraintsPB.size(), clauses.size(),stats.numOfBinClauses);
-  cout << "initial num units: " << model.trailSize() << endl << endl;
+  //cout << "initial num units: " << model.trailSize() << endl << endl;
 
   // When problem is read, all constraints are stored as PB constraints (even bins and clauses)
   // The doCleanup call will classify each constraint properly
@@ -152,7 +152,7 @@ void Solver::solve (int tlimit) {
       --nconfl_to_restart;
       strat.reportConflict(model.trailSize());
       if (model.currentDecisionLevel() == 0) {
-        cout << endl << "conflict at dl 0" << ", nDecs: " << stats.numOfDecisions << " nConfs: " << stats.numOfConflicts << endl;
+        //cout << endl << "conflict at dl 0" << ", nDecs: " << stats.numOfDecisions << " nConfs: " << stats.numOfConflicts << endl;
         updateStatusConflictAtDLZero();
         return;
       }
@@ -167,7 +167,7 @@ void Solver::solve (int tlimit) {
       strat.reportRestart(); 
       double rest_base = luby(2, stats.numOfRestarts);
       nconfl_to_restart = (long long)rest_base * 100;
-      cout << "R" << flush;
+      //cout << "R" << flush;
       maxHeap.reset();
     }
     
@@ -175,7 +175,7 @@ void Solver::solve (int tlimit) {
       // Cleanup based on conflicts, not on constraint database siza
       backjumpToDL(0);
       strat.reportCleanup();
-      cout << "C" << stats.numOfCleanUps << " " << flush;  
+      //cout << "C" << stats.numOfCleanUps << " " << flush;  
       doCleanup();                 assert( not conflict );
       while (stats.numOfConflicts >= stats.numOfCleanUps * nconfl_to_reduce) nconfl_to_reduce += 100;
     }

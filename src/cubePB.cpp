@@ -11,6 +11,10 @@
 #include <string>
 #include <vector>
 
+#include <chrono>
+#include <thread>
+#include <atomic>
+
 using namespace std;
 
 // MPI message tags
@@ -67,8 +71,8 @@ void generate_cubes_rec(Solver& solver,
     // Cutoff heuristic:
     // stop branching and store the current decision path as a cube
     if ((long long)numDec * (long long)assigned > theta * nVars) {
-        cubes.push_back(current);
-        return;
+      cubes.push_back(current);
+      return;
     }
 
     // Best branching variable according to evalvar heuristic
@@ -242,6 +246,29 @@ Solver::StatusSolver solve_cube(PBProblem& problem,
     return solver.currentStatus();
 }
 
+vector<int> cube_of_worker;
+vector<clock_t> time_of_worker;
+int total_number_cubes;
+
+void startTimer(std::atomic<bool>& run, int interval) {
+    std::thread t([&run, interval]() {
+        while (run) {
+	  cout << string(50,'=') << endl;
+	  cout << "TOTAL NUMBER CUBES TO BE PROCESSED: " << total_number_cubes << endl;
+	  for (uint w = 1; w < cube_of_worker.size(); ++w){
+	    cout << "Worker " << w << ":";
+	    if (cube_of_worker[w] == -1) cout << " idle" << endl;
+	    else cout << " cube " << format("{:4}", cube_of_worker[w]) << "\t(" << double(clock() - time_of_worker[w])/CLOCKS_PER_SEC << " s.)" << endl;
+	  }
+	  cout << string(30,'=') << endl;	  
+            std::this_thread::sleep_for(std::chrono::seconds(interval));
+        }
+    });
+    t.detach(); // Let it run independently
+}
+
+
+
 int main(int argc, char** argv) {
     MPI_Init(&argc, &argv);
 
@@ -249,6 +276,7 @@ int main(int argc, char** argv) {
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
     MPI_Comm_size(MPI_COMM_WORLD, &size);
 
+    
     // Basic argument check
     if (argc < 2) {
         if (rank == 0) {
@@ -288,6 +316,7 @@ int main(int argc, char** argv) {
 
     // -------------------- MASTER --------------------
     if (rank == 0) {
+
         // Build the base solver used only for cube generation
         clock_t beginTime = clock();
         Solver baseSolver(nVars, beginTime);
@@ -304,7 +333,8 @@ int main(int argc, char** argv) {
 
         // Generate cubes using lookahead on the base solver
         vector<vector<int>> cubes = generate_cubes(baseSolver, allVars, nVars);
-
+	total_number_cubes = cubes.size();;
+	
         // If SAT was detected during cube generation, stop everything
         if (cube_sat_found) {
             cout << "Global result: SAT found during cube generation" << endl;
@@ -330,20 +360,28 @@ int main(int argc, char** argv) {
         }
 
         int next_cube = 0;
-        int finished_workers = 0;
+        int finished_workers = size - 1;
         bool sat_found = false;
         bool unknown_seen = false;
-
+	clock_t last_printed_stats = clock();
+	cube_of_worker = vector<int>(size,-1);
+	time_of_worker = vector<clock_t>(size);
+	std::atomic<bool> keepRunning(true);
+	startTimer(keepRunning, 10); // Run every 10 seconds
+	
         // Send one initial cube to each worker
         for (int p = 1; p < size; ++p) {
             if (next_cube < (int)cubes.size()) {
                 int len = (int)cubes[next_cube].size();
                 MPI_Send(&len, 1, MPI_INT, p, TAG_WORK, MPI_COMM_WORLD);
                 if (len > 0) {
+		    cube_of_worker[p] = next_cube;
+		    time_of_worker[p] = clock();
                     MPI_Send(cubes[next_cube].data(), len, MPI_INT, p, TAG_WORK, MPI_COMM_WORLD);
+		    --finished_workers;
                 }
+                cout << "Sent cube " << next_cube << " to worker " << p << endl;
                 next_cube++;
-                cout << "Sent cube " << next_cube << " to process " << p << endl;
             } else {
                 int stop = 1;
                 MPI_Send(&stop, 1, MPI_INT, p, TAG_STOP, MPI_COMM_WORLD);
@@ -352,17 +390,29 @@ int main(int argc, char** argv) {
 
         // Receive results and dynamically send more cubes
         while (!sat_found && finished_workers < size - 1) {
-            int msg[2];
+	    if (double((clock() - last_printed_stats)) / CLOCKS_PER_SEC > 10) {
+	      cout << string(30,'=') << endl;
+	      last_printed_stats = clock();
+	      for (int w = 1; w < size; ++w){
+		cout << "Worker " << w << ":";
+		if (cube_of_worker[w] == -1) cout << "idle" << endl;
+		else cout << "cube " << cube_of_worker[w] << "\t(" << double(clock() - time_of_worker[w])/CLOCKS_PER_SEC << " s.)" << endl;
+	      }
+	      cout << string(30,'=') << endl;
+	    }
+ 
+
+	    int msg[2];
             MPI_Status status;
             MPI_Recv(msg, 2, MPI_INT, MPI_ANY_SOURCE, TAG_RESULT, MPI_COMM_WORLD, &status);
-
+	    
             int result = msg[0];
             int worker = msg[1];
 
             if (result == 10) {
                 // One worker found SAT: stop all others
                 sat_found = true;
-                cout << "SAT found by process " << worker << endl;
+                cout << "SAT found by worker " << worker << endl;
 
                 int stop = 1;
                 for (int p = 1; p < size; ++p) {
@@ -380,14 +430,18 @@ int main(int argc, char** argv) {
                     MPI_Send(&len, 1, MPI_INT, worker, TAG_WORK, MPI_COMM_WORLD);
                     if (len > 0) {
                         MPI_Send(cubes[next_cube].data(), len, MPI_INT, worker, TAG_WORK, MPI_COMM_WORLD);
+			cube_of_worker[worker] = next_cube;
+			time_of_worker[worker] = clock();
                     }
+                    cout << "Sent cube " << next_cube << " to worker " << worker << endl;
                     next_cube++;
-                    cout << "Sent cube " << next_cube << " to process " << worker << endl;
                 } else {
                     // No more cubes left: stop this worker
                     int stop = 1;
+		    cube_of_worker[worker] = -1;
                     MPI_Send(&stop, 1, MPI_INT, worker, TAG_STOP, MPI_COMM_WORLD);
                     finished_workers++;
+		    cout << "Worker " << worker << " finished" << endl;
                 }
             }
         }
@@ -401,6 +455,7 @@ int main(int argc, char** argv) {
             }
         }
 
+	keepRunning = false;	
         MPI_Finalize();
         return 0;
     }

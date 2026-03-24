@@ -66,5 +66,8 @@ void Solver::computeBestPolarityForVarInObjectiveFunction ( ) {
 
 void Solver::increaseActivityScoreOfVar(int var) { 
   bool overFlow = maxHeap.increaseValueBy( var, strat.increaseFactorInDecision(var));
-  if ( overFlow ) { cout << "O" << flush; strat.scoreBonus = strat.INITIAL_SCORE_BONUS; maxHeap.reset(); }
+  if ( overFlow ) {
+    //cout << "O" << flush;
+    strat.scoreBonus = strat.INITIAL_SCORE_BONUS;
+    maxHeap.reset(); }
 }

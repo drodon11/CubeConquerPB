@@ -1,18 +1,18 @@
 CC              = g++
 MPICC           = mpic++
-#CFLAGS          = -std=c++17 -pg -O3 -Wall
-#CFLAGS          = -std=c++17 -O3 -g -D_GLIBCXX_DEBUG
-#CFLAGS          = -std=c++17 -g -O3 -Wall -D_GLIBCXX_DEBUG #-DNDEBUG 
-#CFLAGS          = -std=c++17 -g -pg -O3 -Wall -DNDEBUG 
-#CFLAGS          = -std=c++17 -g -O0 -fno-inline -Wall -D_GLIBCXX_DEBUG
+#CFLAGS          = -std=c++20 -pg -O3 -Wall
+#CFLAGS          = -std=c++20 -O3 -g -D_GLIBCXX_DEBUG
+#CFLAGS          = -std=c++20 -g -O3 -Wall -D_GLIBCXX_DEBUG #-DNDEBUG 
+#CFLAGS          = -std=c++20 -g -pg -O3 -Wall -DNDEBUG 
+#CFLAGS          = -std=c++20 -g -O0 -fno-inline -Wall -D_GLIBCXX_DEBUG
 #the following is for valgrind --leak-check=yes intsat c.lp
 #CFLAGS          = -g -O0 -Wall
 
 # for measuring time
-CFLAGS          = -std=c++17 -O3 -Wall -DNDEBUG
+CFLAGS          = -std=c++20 -O3 -Wall  -DNDEBUG
 
 # for checking correctness
-#CFLAGS          = -std=c++17 -O3 -Wall -static 
+#CFLAGS          = -std=c++20 -O3 -Wall -static 
 
 
 # ifndef d
