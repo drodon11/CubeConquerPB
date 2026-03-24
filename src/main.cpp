@@ -145,6 +145,7 @@ void cube_conquer (Solver& solver) {
 }
 
 int main (int argc, char *argv[]) {  
+  char* arg;
   if (argc <= 1) {
     showUsage(argv[0]);
     exit(0);
@@ -154,6 +155,15 @@ int main (int argc, char *argv[]) {
   string filename = argv[argc-1];
   cout << endl << endl << "Input problem:  " <<  filename << endl << endl;
 
+  int seed = 1;
+  arg = inputReadCommandLineArg(argc,argv,"seed");
+  if (arg) seed = atoi(arg);
+  
+  int tlimit = 0;
+  arg = inputReadCommandLineArg(argc,argv,"tlimit");
+  if (arg) tlimit = atoi(arg);
+
+  srand ( seed );
   Parser parser;
   PBProblem problem;
   if (filename.size() >= 3 and filename.substr(filename.size()-3) == ".lp")
@@ -194,17 +204,17 @@ int main (int argc, char *argv[]) {
 
   cout << "constraints and objective added, took " << double((clock() - beginTime)/CLOCKS_PER_SEC) << "s" << endl;
 
-  //solver.set_periodic_function(terminate_cb);
+  solver.set_periodic_function(terminate_cb);
 
-  cube_conquer(solver);
-  // solver.solve(tlimit);
+  //cube_conquer(solver);
+  solver.solve(tlimit);
   
-  // uint64_t m = solver.maximum_resident_set_size ();
-  // cout << endl;
-  // printf("maximum resident set size of process:    %12.2f    MB", m/(double)(1l<<20));
+  uint64_t m = solver.maximum_resident_set_size ();
+  cout << endl;
+  printf("maximum resident set size of process:    %12.2f    MB", m/(double)(1l<<20));
 
-  // finalMessage();
-  // exit(0);
+  finalMessage();
+  exit(0);
 
   
 }
