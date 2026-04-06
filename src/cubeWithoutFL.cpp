@@ -67,6 +67,7 @@ extern "C" int terminate_cb() {
 }
 
 // Recursive cube generation using a lookahead evalvar-style heuristic
+// Recursive cube generation using a lookahead evalvar-style heuristic
 void generate_cubes_rec(Solver& solver,
                         const vector<int>& vars,
                         int nVars,
@@ -103,82 +104,60 @@ void generate_cubes_rec(Solver& solver,
 
     // Number of assigned variables before temporary lookaheads
     int baseAssigned = assigned;
-    // Counter for failed literals
-    int failedLits = 0;
-    bool failedLitFound = true;
-    while(failedLitFound){
-        baseAssigned = solver.assignedVars();
-        // Evaluate every currently undefined variable
-        failedLitFound = false;
-        for (int v : vars) {
-            if (!solver.isUndefLit(v)) continue;
 
-            // Try v = true
-            bool okPos = solver.assumeAndPropagate(v);
-            int eval_pos;
-            if (!okPos) {
-                // Conflict during lookahead: assign a large score
-                eval_pos = nVars + 10;
-            //cout << "Conf for var " << v << endl;
-            } else {
-                // Number of newly assigned variables caused by propagation
-                eval_pos = solver.assignedVars() - baseAssigned;
-            }
-            solver.backtrack(1);
+    // Evaluate every currently undefined variable
+    for (int v : vars) {
+        if (!solver.isUndefLit(v)) continue;
 
-            // Try v = false
-            bool okNeg = solver.assumeAndPropagate(-v);
-            int eval_neg;
-            if (!okNeg) {
-                // Conflict during lookahead: assign a large score
-                eval_neg = nVars + 10;
-            //cout << "Conf (neg) for var " << v << endl;
-            } else {
-                // Number of newly assigned variables caused by propagation
-                eval_neg = solver.assignedVars() - baseAssigned;
-            }
-            solver.backtrack(1);
+        // Try v = true
+        bool okPos = solver.assumeAndPropagate(v);
+        int eval_pos;
+        if (!okPos) {
+            // Conflict during lookahead: assign a large score
+            eval_pos = nVars + 10;
+	    //cout << "Conf for var " << v << endl;
+        } else {
+            // Number of newly assigned variables caused by propagation
+            eval_pos = solver.assignedVars() - baseAssigned;
+        }
+        solver.backtrack(1);
 
-            // If both branches are impossible, the current node is refuted
-            if (!okPos && !okNeg) {
-                solver.backtrack(failedLits);
-                return;
-            }
-            else if (!okPos || !okNeg) {
-                // If only one branch is possible, assign the variable accordingly and continue
-                int lit = okPos ? v : -v;
-                //current.push_back(lit);
-                solver.assumeAndPropagate(lit);
-                bestVar = 0;
-                bestScore = -1;
-                bestTie = -1;
-                bestEvalPos = 0;
-                bestEvalNeg = 0;
-                failedLitFound = true;
-                failedLits++;
-                break;
-            }
-            // Standard evalvar ranking:
-            // maximize eval_pos * eval_neg, break ties with eval_pos + eval_neg
-            long long score = 1LL * eval_pos * eval_neg;
-            long long tie   = 1LL * eval_pos + eval_neg;
+        // Try v = false
+        bool okNeg = solver.assumeAndPropagate(-v);
+        int eval_neg;
+        if (!okNeg) {
+            // Conflict during lookahead: assign a large score
+            eval_neg = nVars + 10;
+	    //cout << "Conf (neg) for var " << v << endl;
+        } else {
+            // Number of newly assigned variables caused by propagation
+            eval_neg = solver.assignedVars() - baseAssigned;
+        }
+        solver.backtrack(1);
 
-            if (score > bestScore || (score == bestScore && tie > bestTie)) {
-                bestScore   = score;
-                bestTie     = tie;
-                bestVar     = v;
-                bestEvalPos = eval_pos;
-                bestEvalNeg = eval_neg;
-            }
+        // If both branches are impossible, the current node is refuted
+        if (!okPos && !okNeg) {
+            return;
+        }
+
+        // Standard evalvar ranking:
+        // maximize eval_pos * eval_neg, break ties with eval_pos + eval_neg
+        long long score = 1LL * eval_pos * eval_neg;
+        long long tie   = 1LL * eval_pos + eval_neg;
+
+        if (score > bestScore || (score == bestScore && tie > bestTie)) {
+            bestScore   = score;
+            bestTie     = tie;
+            bestVar     = v;
+            bestEvalPos = eval_pos;
+            bestEvalNeg = eval_neg;
         }
     }
-    
 
     // PB-SAT case:
     // no undefined variables remain and no conflict was found => SAT globally
     if (bestVar == 0) {
         cube_sat_found = true;
-        if(failedLits>0)solver.backtrack(failedLits);
         return;
     }
 
@@ -206,10 +185,8 @@ void generate_cubes_rec(Solver& solver,
     current.pop_back();
 
     // Stop before exploring the second branch if SAT was already found
-    if (cube_sat_found) {
-        if(failedLits>0)solver.backtrack(failedLits);
-        return;
-    }
+    if (cube_sat_found) return;
+
     // Explore second branch
     current.push_back(secondLit);
     ok = solver.assumeAndPropagate(secondLit);
@@ -221,10 +198,6 @@ void generate_cubes_rec(Solver& solver,
     }
     solver.backtrack(1);
     current.pop_back();
-    //If we found conflict nodes we have to backtrack all the way up to the last decision level
-    if(failedLits > 0){
-        solver.backtrack(failedLits);
-    }
 }
 
 
