@@ -208,6 +208,7 @@ int main (int argc, char *argv[]) {
 
   //cube_conquer(solver);
   solver.solve(tlimit);
+
   
   uint64_t m = solver.maximum_resident_set_size ();
   cout << endl;

@@ -250,6 +250,10 @@ void Solver::solve (int tlimit) {
   }
 }
 
+int Solver::cost_best_solution ( ) const {
+  return stats.costOfBestSolution;
+}
+
 Solver::StatusSolver Solver::currentStatus ( ) const {
   return status;
 }

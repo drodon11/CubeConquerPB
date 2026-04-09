@@ -487,7 +487,8 @@ int main(int argc, char** argv) {
             if (result == RES_SPLIT) {
                 int numSubcubes = extra;
                 cube_of_worker[worker] = -1;
-                
+
+		cout << "Split cube of worker " << worker << " into " << numSubcubes << " additional cubes" << endl;
                 for (int i = 0; i < numSubcubes; ++i) {
                     int len;
                     MPI_Recv(&len, 1, MPI_INT, worker, TAG_SPLIT, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
@@ -624,6 +625,8 @@ int main(int argc, char** argv) {
         msg[1] = rank;
         msg[2] = 0;
 
+	// solver.cost_best_solution()
+	
         // Send result back to the master
         if (ans == Solver::SOME_SOLUTION_FOUND || ans == Solver::OPTIMUM_FOUND) {
             msg[0] = 10;   // SAT for this cube

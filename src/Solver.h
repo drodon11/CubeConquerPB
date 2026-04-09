@@ -208,6 +208,7 @@ public: // all in Solver.cpp
   // Solve and retrieve info about solving process
   void   solve (int tlimit);
   void   set_periodic_function(int (*terminate) () );
+  int    cost_best_solution ( ) const;
   
   StatusSolver currentStatus ( ) const;
   void    printStats() const;
