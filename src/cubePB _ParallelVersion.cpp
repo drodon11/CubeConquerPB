@@ -14,11 +14,7 @@
 #include <chrono>
 #include <thread>
 #include <atomic>
-#include <climits>
 
-// a fer: millora paralelisme, afegir paralelitzacio quan els cubs son massa grans i augmentar el temps 
-//cada vegada que es fa split. 
-//millora optimització: enviar millor la solució incumbent a les workers, perque facin un cut més fort i potser evitin splits innecessaris.
 using namespace std;
 std::chrono::steady_clock::time_point worker_cube_start;
 
@@ -37,32 +33,13 @@ const int RES_SPLIT = 30;
 // Global flag used by workers to stop early when another process found SAT
 int global_stop_flag = 0;
 int split_requested_flag = 0;
-const int base_split_time_limit = 240; // seconds
-int current_split_time_limit = base_split_time_limit;
+const int split_time_limit = 240; // seconds
 
 // Global cutoff threshold used during cube generation
 double theta = 1000.0;
 
 // Global flag set when SAT is detected during cube generation
 bool cube_sat_found = false;
-
-int global_best_cost;
-struct CubeTask {
-    vector<int> lits;
-    int split_depth;
-};
-
-int compute_split_time_limit(int split_depth) {
-    long long limit = base_split_time_limit;
-    for (int i = 0; i < split_depth; ++i) {
-        if (limit > INT_MAX / 2) {
-            limit = INT_MAX;
-            break;
-        }
-        limit *= 2;
-    }
-    return (int)limit;
-}
 
 // Check whether a STOP message has been sent by the master.
 // If so, receive it and update the global stop flag.
@@ -82,7 +59,7 @@ extern "C" int terminate_cb() {
     auto now = std::chrono::steady_clock::now();
     double elapsed = std::chrono::duration<double>(now - worker_cube_start).count();
 
-    if (elapsed >= current_split_time_limit) {
+    if (elapsed >= split_time_limit) {
         split_requested_flag = 1;
         return 1;
     }
@@ -175,7 +152,7 @@ void generate_cubes_rec(Solver& solver,
             else if (!okPos || !okNeg) {
                 // If only one branch is possible, assign the variable accordingly and continue
                 int lit = okPos ? v : -v;
-                //current.push_back(lit);
+                current.push_back(lit);
                 solver.assumeAndPropagate(lit);
                 bestVar = 0;
                 bestScore = -1;
@@ -298,68 +275,6 @@ void generate_cubes_rec(Solver& solver,
     }
 }
 
-void add_linear_constraint_to_solver(Solver& solver,
-                                     const vector<int>& coeffs,
-                                     const vector<int>& varNums,
-                                     int rhs,
-                                     bool isGeq) {
-    vector<int> coefficients, literals;
-
-    if (!isGeq) rhs = -rhs;
-
-    for (int i = 0; i < (int)coeffs.size(); ++i) {
-        int coef = coeffs[i];
-        if (!isGeq) coef = -coef;
-
-        int finalCoef = abs(coef);
-        int lit = varNums[i];
-
-        if (coef < 0) {
-            rhs += finalCoef;
-            lit = -lit;
-        }
-        if (coef != 0) {
-            coefficients.push_back(finalCoef);
-            literals.push_back(lit);
-        }
-    }
-
-    // Trivially true constraint
-    if (rhs < 1) return;
-
-    WConstraint c(coefficients, literals, rhs);
-    c.sortByIncreasingVariable();
-    c.removeDuplicates();
-    c.sortByDecreasingCoefficient();
-    solver.addAndPropagatePBConstraint(c, true, 0, 0);
-}
-
-// Add incumbent bound to solver:
-// if minimizing and bestCost = B, force obj <= B-1
-// if maximizing and bestCost = B, force obj >= B+1
-void add_objective_bound_constraint(Solver& solver,
-                                    PBProblem& problem,
-                                    int bestCost) {
-    if (problem.objCoeffs.empty()) return;
-
-    if (problem.minimizing) {
-        add_linear_constraint_to_solver(
-            solver,
-            problem.objCoeffs,
-            problem.objVars,
-            bestCost - 1,
-            false   // <=
-        );
-    } else {
-        add_linear_constraint_to_solver(
-            solver,
-            problem.objCoeffs,
-            problem.objVars,
-            bestCost + 1,
-            true    // >=
-        );
-    }
-}
 
 // Wrapper that initializes cube generation from the base solver state
 vector<vector<int>> generate_cubes(Solver& solver,
@@ -426,10 +341,8 @@ struct CubeSolveResult {
 // Solve a single cube with a fresh solver instance
 CubeSolveResult solve_cube(PBProblem& problem,
                            Parser& parser,
-                           const int& nVars,
-                           const vector<int>& cube,
-                           const int& bestCost,
-                           const bool& hasBestCost) {
+                           int nVars,
+                           const vector<int>& cube) {
     clock_t beginTime = clock();
     Solver solver(nVars, beginTime);
 
@@ -444,9 +357,7 @@ CubeSolveResult solve_cube(PBProblem& problem,
     // Load the base problem and then the cube assumptions
     add_base_problem(solver, problem);
     add_cube_constraints(solver, cube);
-    if (hasBestCost) {
-        add_objective_bound_constraint(solver, problem, bestCost);
-    }
+
     int tlimit = 0;
     solver.solve(tlimit);
 
@@ -457,14 +368,76 @@ CubeSolveResult solve_cube(PBProblem& problem,
     return res;
 }
 
+void add_linear_constraint_to_solver(Solver& solver,
+                                     const vector<int>& coeffs,
+                                     const vector<int>& varNums,
+                                     int rhs,
+                                     bool isGeq) {
+    vector<int> coefficients, literals;
+
+    if (!isGeq) rhs = -rhs;
+
+    for (int i = 0; i < (int)coeffs.size(); ++i) {
+        int coef = coeffs[i];
+        if (!isGeq) coef = -coef;
+
+        int finalCoef = abs(coef);
+        int lit = varNums[i];
+
+        if (coef < 0) {
+            rhs += finalCoef;
+            lit = -lit;
+        }
+        if (coef != 0) {
+            coefficients.push_back(finalCoef);
+            literals.push_back(lit);
+        }
+    }
+
+    // Trivially true constraint
+    if (rhs < 1) return;
+
+    WConstraint c(coefficients, literals, rhs);
+    c.sortByIncreasingVariable();
+    c.removeDuplicates();
+    c.sortByDecreasingCoefficient();
+    solver.addAndPropagatePBConstraint(c, true, 0, 0);
+}
+
+// Add incumbent bound to solver:
+// if minimizing and bestCost = B, force obj <= B-1
+// if maximizing and bestCost = B, force obj >= B+1
+void add_objective_bound_constraint(Solver& solver,
+                                    PBProblem& problem,
+                                    int bestCost) {
+    if (problem.objCoeffs.empty()) return;
+
+    if (problem.minimizing) {
+        add_linear_constraint_to_solver(
+            solver,
+            problem.objCoeffs,
+            problem.objVars,
+            bestCost - 1,
+            false   // <=
+        );
+    } else {
+        add_linear_constraint_to_solver(
+            solver,
+            problem.objCoeffs,
+            problem.objVars,
+            bestCost + 1,
+            true    // >=
+        );
+    }
+}
 
 vector<vector<int>> split_cube(PBProblem& problem,
                                Parser& parser,
                                int nVars,
                                const vector<int>& cube,
-                               bool optimizing,
-                               int bestCost,
-                               bool hasBestCost) {
+                               bool optimizing = false,
+                               int bestCost = 0,
+                               bool hasBestCost = false) {
     clock_t beginTime = clock();
     Solver solver(nVars, beginTime);
     solver.setBT0(true);
@@ -495,7 +468,6 @@ vector<vector<int>> split_cube(PBProblem& problem,
 }
 
 vector<int> cube_of_worker;
-vector<int> cube_depth_of_worker;
 vector<clock_t> time_of_worker;
 int total_number_cubes;
 
@@ -509,12 +481,10 @@ void startTimer(std::atomic<bool>& run, int interval) {
 	    if (cube_of_worker[w] == -1) cout << " idle" << endl;
 	   else {
     cout << " cube " << setw(4) << cube_of_worker[w]
-         << " [depth " << cube_depth_of_worker[w] << "]"
          << "\t(" << double(clock() - time_of_worker[w]) / CLOCKS_PER_SEC
          << " s.)" << endl;
 	}
 	  }
-      cout<< "Global best cost: " << global_best_cost << endl;
 	  cout << string(30,'=') << endl;
             std::this_thread::sleep_for(std::chrono::seconds(interval));
         }
@@ -522,7 +492,7 @@ void startTimer(std::atomic<bool>& run, int interval) {
     t.detach(); // Let it run independently
 }
 
-bool bestSolution(int bestCost, int worker, PBProblem& problem){
+bool bestSolution(int bestCost, int& global_best_cost, int worker, PBProblem& problem){
 
     bool better = problem.minimizing ? (bestCost < global_best_cost): (bestCost > global_best_cost);
     if (better) {
@@ -532,6 +502,9 @@ bool bestSolution(int bestCost, int worker, PBProblem& problem){
     }
     return better;
 }
+
+// Helper: add a general linear constraint to the solver, normalized exactly
+// like Parser::addConstraint does.
 
 
 
@@ -566,7 +539,7 @@ int main(int argc, char** argv) {
 
     Parser parser;
     PBProblem problem;
-    bool optimizing = true;
+    bool optimizing = false;
     // Each rank reads the same input file locally
     if (filename.size() >= 4 && filename.substr(filename.size() - 4) == ".opb") {
         problem = parser.readOPB(filename);
@@ -587,9 +560,9 @@ int main(int argc, char** argv) {
     // -------------------- MASTER --------------------
     if (rank == 0) {
 
-        vector<CubeTask> cubes;
+        vector<vector<int>> cubes;
         bool sat_found_during_generation = false;
-        global_best_cost = problem.minimizing ? std::numeric_limits<int>::max() : std::numeric_limits<int>::min();
+        int global_best_cost = problem.minimizing ? std::numeric_limits<int>::max() : std::numeric_limits<int>::min();
         bool feasible_seen = false;
         // Receive the initial cubes generated by the workers
         for (int p = 1; p < size; ++p) {
@@ -610,7 +583,7 @@ int main(int argc, char** argv) {
                 if (len > 0) {
                     MPI_Recv(cube.data(), len, MPI_INT, p, TAG_INIT_CUBE, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
                 }
-                cubes.push_back({cube, 0});
+                cubes.push_back(cube);
             }
         }
 
@@ -644,39 +617,27 @@ int main(int argc, char** argv) {
         int active_workers = 0;
         bool sat_found = false;
         bool unknown_seen = false;
-        clock_t last_printed_stats = clock();
-        cube_of_worker = vector<int>(size,-1);
-        cube_depth_of_worker = vector<int>(size,-1);
-        time_of_worker = vector<clock_t>(size);
-        std::atomic<bool> keepRunning(true);
-        startTimer(keepRunning, 10); // Run every 10 seconds
-        bool global_has_best_cost = false;
+	clock_t last_printed_stats = clock();
+	cube_of_worker = vector<int>(size,-1);
+	time_of_worker = vector<clock_t>(size);
+	std::atomic<bool> keepRunning(true);
+	startTimer(keepRunning, 10); // Run every 10 seconds
+
         // Send one initial cube to each worker
         for (int p = 1; p < size; ++p) {
             if (next_cube < (int)cubes.size()) {
-                int header[2];
-                header[0] = (int)cubes[next_cube].lits.size();
-                header[1] = cubes[next_cube].split_depth;
-                MPI_Send(header, 2, MPI_INT, p, TAG_WORK, MPI_COMM_WORLD);
-                if (header[0] > 0) {
+                int len = (int)cubes[next_cube].size();
+                MPI_Send(&len, 1, MPI_INT, p, TAG_WORK, MPI_COMM_WORLD);
+                if (len > 0) {
                     cube_of_worker[p] = next_cube;
-                    cube_depth_of_worker[p] = cubes[next_cube].split_depth;
                     time_of_worker[p] = clock();
-                    MPI_Send(cubes[next_cube].lits.data(), header[0], MPI_INT, p, TAG_WORK, MPI_COMM_WORLD);
+                    MPI_Send(cubes[next_cube].data(), len, MPI_INT, p, TAG_WORK, MPI_COMM_WORLD);
 		            ++active_workers;
-                }
-                if(optimizing){
-                    int hasBest = global_has_best_cost ? 1 : 0;
-                    MPI_Send(&hasBest, 1, MPI_INT, p, TAG_WORK, MPI_COMM_WORLD);
-                    if (global_has_best_cost) {
-                        MPI_Send(&global_best_cost, 1, MPI_INT, p, TAG_WORK, MPI_COMM_WORLD);
-                    }
                 }
                 cout << "Sent cube " << next_cube << " to worker " << p << endl;
                 next_cube++;
             } else {
                 cube_of_worker[p] = -1;
-                cube_depth_of_worker[p] = -1;
             }
         }
 
@@ -692,16 +653,13 @@ int main(int argc, char** argv) {
 
             if(result == 25){
                 feasible_seen = true;
-                bestSolution(extra, worker, problem);
-                global_has_best_cost = true;
+                bestSolution(extra, global_best_cost, worker, problem);
                 MPI_Send(&global_best_cost, 1, MPI_INT, worker, TAG_RESULT, MPI_COMM_WORLD);
                 continue;
             }
             else if (result == RES_SPLIT) {
                 int numSubcubes = extra;
-                int child_depth = cube_depth_of_worker[worker] + 1;
                 cube_of_worker[worker] = -1;
-                cube_depth_of_worker[worker] = -1;
                 active_workers--;
 		        cout << "Split cube of worker " << worker << " into " << numSubcubes << " additional cubes" << endl;
                 for (int i = 0; i < numSubcubes; ++i) {
@@ -711,30 +669,19 @@ int main(int argc, char** argv) {
                     if (len > 0) {
                         MPI_Recv(subcube.data(), len, MPI_INT, worker, TAG_SPLIT, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
                     }
-                    cubes.push_back({subcube, child_depth});
+                    cubes.push_back(subcube);
                 }
                 total_number_cubes = cubes.size();
 
                 for (int p = 1; p < size; ++p) {
                     if (next_cube < (int)cubes.size()) {
                         if(cube_of_worker[p] != -1) continue; // worker is still busy
-                        int header[2];
-                        header[0] = (int)cubes[next_cube].lits.size();
-                        header[1] = cubes[next_cube].split_depth;
-                        MPI_Send(header, 2, MPI_INT, p, TAG_WORK, MPI_COMM_WORLD);
-                        if (header[0] > 0) {
+                        int len = (int)cubes[next_cube].size();
+                        MPI_Send(&len, 1, MPI_INT, p, TAG_WORK, MPI_COMM_WORLD);
+                        if (len > 0) {
                             cube_of_worker[p] = next_cube;
-                            cube_depth_of_worker[p] = cubes[next_cube].split_depth;
                             time_of_worker[p] = clock();
-                            MPI_Send(cubes[next_cube].lits.data(), header[0], MPI_INT, p, TAG_WORK, MPI_COMM_WORLD);
-                            if(optimizing){
-                                int hasBest = global_has_best_cost ? 1 : 0;
-                                MPI_Send(&hasBest, 1, MPI_INT, p, TAG_WORK, MPI_COMM_WORLD);
-                                if (global_has_best_cost) {
-                                    MPI_Send(&global_best_cost, 1, MPI_INT, p, TAG_WORK, MPI_COMM_WORLD);
-                                }
-                            
-                            }
+                                    MPI_Send(cubes[next_cube].data(), len, MPI_INT, p, TAG_WORK, MPI_COMM_WORLD);
                             ++active_workers;
                         }
                         cout << "Sent cube " << next_cube << " to worker " << p << endl;
@@ -759,34 +706,22 @@ int main(int argc, char** argv) {
                 if (result == 0) unknown_seen = true;
                 else if (result == 10 || result == 15) {
                     feasible_seen = true;
-                    bestSolution(extra, worker, problem);
-                    global_has_best_cost = true;
+                    bestSolution(extra, global_best_cost, worker, problem);
                 }
 
                 // Send another cube to the now free worker
                 if (next_cube < (int)cubes.size()) {
-                    int header[2];
-                    header[0] = (int)cubes[next_cube].lits.size();
-                    header[1] = cubes[next_cube].split_depth;
-                    MPI_Send(header, 2, MPI_INT, worker, TAG_WORK, MPI_COMM_WORLD);
-                    if (header[0] > 0) {
-                        MPI_Send(cubes[next_cube].lits.data(), header[0], MPI_INT, worker, TAG_WORK, MPI_COMM_WORLD);
-                        cube_of_worker[worker] = next_cube;
-                        cube_depth_of_worker[worker] = cubes[next_cube].split_depth;
-                        time_of_worker[worker] = clock();
-                    }
-                    if (optimizing) {
-                        int hasBest = global_has_best_cost ? 1 : 0;
-                        MPI_Send(&hasBest, 1, MPI_INT, worker, TAG_WORK, MPI_COMM_WORLD);
-                        if (global_has_best_cost) {
-                            MPI_Send(&global_best_cost, 1, MPI_INT, worker, TAG_WORK, MPI_COMM_WORLD);
-                        }
+                    int len = (int)cubes[next_cube].size();
+                    MPI_Send(&len, 1, MPI_INT, worker, TAG_WORK, MPI_COMM_WORLD);
+                    if (len > 0) {
+                        MPI_Send(cubes[next_cube].data(), len, MPI_INT, worker, TAG_WORK, MPI_COMM_WORLD);
+			cube_of_worker[worker] = next_cube;
+			time_of_worker[worker] = clock();
                     }
                     cout << "Sent cube " << next_cube << " to worker " << worker << endl;
                     next_cube++;
                 } else {
 		            cube_of_worker[worker] = -1;
-		            cube_depth_of_worker[worker] = -1;
                     --active_workers;
                 }
             }
@@ -862,35 +797,27 @@ int main(int argc, char** argv) {
     }
 
     while (true) {
-        int header[2];
+        int len;
         MPI_Status status;
 
         // Receive either a cube or a stop signal from the master
-        MPI_Recv(header, 2, MPI_INT, 0, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
+        MPI_Recv(&len, 1, MPI_INT, 0, MPI_ANY_TAG, MPI_COMM_WORLD, &status);
 
         if (status.MPI_TAG == TAG_STOP) {
             break;
         }
-
-        int len = header[0];
-        int split_depth = header[1];
 
         // Receive the cube literals
         vector<int> cube(len);
         if (len > 0) {
             MPI_Recv(cube.data(), len, MPI_INT, 0, TAG_WORK, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
         }
-        int global_has_best_cost = false;
-        if(optimizing){
-            MPI_Recv(&global_has_best_cost, 1, MPI_INT, 0, TAG_WORK, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-            if(global_has_best_cost)MPI_Recv(&global_best_cost, 1, MPI_INT, 0, TAG_WORK, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-        }
+
         global_stop_flag = 0;
         split_requested_flag = 0;
-        current_split_time_limit = compute_split_time_limit(split_depth);
         worker_cube_start = std::chrono::steady_clock::now();
         // Solve the assigned cube
-        CubeSolveResult cubeRes = solve_cube(problem, parser, nVars, cube, global_best_cost, global_has_best_cost);
+        CubeSolveResult cubeRes = solve_cube(problem, parser, nVars, cube);
         Solver::StatusSolver ans = cubeRes.status;
 
         // If this worker was interrupted because another process found SAT, exit
@@ -898,15 +825,15 @@ int main(int argc, char** argv) {
             break;
         }
         if (split_requested_flag) {
-            int incumbent_for_split = global_best_cost;
-            bool has_incumbent_for_split = global_has_best_cost;
+            int incumbent_for_split = 0;
+            bool has_incumbent_for_split = false;
             if(optimizing){
                 if (cubeRes.hasSolution) {
-                    int header2[3];
-                    header2[0] = 25; // SAT AND SPLIT REQUESTED
-                    header2[1] = rank;
-                    header2[2] = cubeRes.bestCost;
-                    MPI_Send(header2, 3, MPI_INT, 0, TAG_RESULT, MPI_COMM_WORLD);
+                    int header[3];
+                    header[0] = 25; // SAT AND SPLIT REQUESTED
+                    header[1] = rank;
+                    header[2] = cubeRes.bestCost;
+                    MPI_Send(header, 3, MPI_INT, 0, TAG_RESULT, MPI_COMM_WORLD);
                     MPI_Recv(&incumbent_for_split, 1, MPI_INT, 0, TAG_RESULT, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
                     has_incumbent_for_split = true;
                 }
@@ -914,18 +841,18 @@ int main(int argc, char** argv) {
 
             vector<vector<int>> subcubes = split_cube(problem, parser, nVars, cube, optimizing, incumbent_for_split, has_incumbent_for_split);
 
-            int header2[3];
-            header2[1] = rank;
+            int header[3];
+            header[1] = rank;
 
             if (cube_sat_found && !optimizing) {
-                header2[0] = 10; // SAT
-                header2[2] = 0;
-                MPI_Send(header2, 3, MPI_INT, 0, TAG_RESULT, MPI_COMM_WORLD);
+                header[0] = 10; // SAT
+                header[2] = 0;
+                MPI_Send(header, 3, MPI_INT, 0, TAG_RESULT, MPI_COMM_WORLD);
                 break;
             }
-            header2[0] = RES_SPLIT;
-            header2[2] = (int)subcubes.size();
-            MPI_Send(header2, 3, MPI_INT, 0, TAG_RESULT, MPI_COMM_WORLD);
+            header[0] = RES_SPLIT;
+            header[2] = (int)subcubes.size();
+            MPI_Send(header, 3, MPI_INT, 0, TAG_RESULT, MPI_COMM_WORLD);
 
             for (const auto& sc : subcubes) {
                 int slen = (int)sc.size();
@@ -961,7 +888,9 @@ int main(int argc, char** argv) {
                 msg[2] = cubeRes.bestCost;
                 MPI_Send(msg, 3, MPI_INT, 0, TAG_RESULT, MPI_COMM_WORLD);
             } else if (ans == Solver::SOME_SOLUTION_FOUND) {
-                
+                msg[0] = 15;   // SAT but not proved optimal for this cube
+                msg[2] = cubeRes.bestCost;
+                MPI_Send(msg, 3, MPI_INT, 0, TAG_RESULT, MPI_COMM_WORLD);
             } else if (ans == Solver::INFEASIBLE) {
                 msg[0] = 20;   // UNSAT for this cube
                 MPI_Send(msg, 3, MPI_INT, 0, TAG_RESULT, MPI_COMM_WORLD);
