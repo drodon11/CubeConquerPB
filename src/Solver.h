@@ -194,7 +194,7 @@ class Solver {
   int                    timeLimit;
   bool                   BT0; // BT to zero after each solution found
 
-  int (*periodic_function)( );
+  int (*periodic_function)(int x);
   
 public: // all in Solver.cpp
   
@@ -207,7 +207,7 @@ public: // all in Solver.cpp
 
   // Solve and retrieve info about solving process
   void   solve (int tlimit);
-  void   set_periodic_function(int (*terminate) () );
+  void   set_periodic_function(int (*terminate) (int x) );
   int    cost_best_solution ( ) const;
   
   StatusSolver currentStatus ( ) const;

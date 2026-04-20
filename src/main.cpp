@@ -40,7 +40,7 @@ char* inputReadCommandLineArg(int argc, char** argv, const char* name)
 
 // Funcio que es crida periodicament dins solver
 
-extern "C" int terminate_cb( ) {
+extern "C" int terminate_cb(int x) {
   // static int x = 0;
   // ++x;
   // printf("Crido a la funcio periodica\n");

@@ -118,7 +118,7 @@ void Solver::addVarName (int varNum, const string& varName) {
 
 // ------------------------- SOLVE AND RETRIEVE INFO ABOUT SOLVING PROCESS ---------------------
 
-void Solver:: set_periodic_function(int (*f) ( ) ) {
+void Solver:: set_periodic_function(int (*f) (int x) ) {
   periodic_function = f;
 }
 
@@ -182,7 +182,8 @@ void Solver::solve (int tlimit) {
     
     if (timeout()) return;
 
-    if (periodic_function()) return;
+    
+    if (periodic_function(stats.numOfSolutionsFound >= 1 ? stats.costOfBestSolution : INT_MAX)) return;
     
     int decVar = getNextDecisionVar();
     

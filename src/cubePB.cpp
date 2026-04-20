@@ -66,9 +66,14 @@ int compute_split_time_limit(int split_depth) {
 
 // Check whether a STOP message has been sent by the master.
 // If so, receive it and update the global stop flag.
-extern "C" int terminate_cb() {
+extern "C" int terminate_cb(int x) {
     MPI_Status status;
     int flag = 0;
+    static int best = INT_MAX;
+    if (x < best) {
+      cout << "********* Best so far *********" << x << endl;
+      best = x;
+    }
 
     // STOP from master
     MPI_Iprobe(0, TAG_STOP, MPI_COMM_WORLD, &flag, &status);
