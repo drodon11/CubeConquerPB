@@ -195,6 +195,7 @@ class Solver {
   bool                   BT0; // BT to zero after each solution found
 
   int (*periodic_function)(int x);
+  void (*import_external_constraints)(Solver * );
   
 public: // all in Solver.cpp
   
@@ -207,7 +208,8 @@ public: // all in Solver.cpp
 
   // Solve and retrieve info about solving process
   void   solve (int tlimit);
-  void   set_periodic_function(int (*terminate) (int x) );
+  void   set_periodic_function(int (*f) (int x) );
+  void   set_import_external_constraints_procedure(void (*f) (Solver *) );
   int    cost_best_solution ( ) const;
   
   StatusSolver currentStatus ( ) const;

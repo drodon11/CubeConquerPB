@@ -103,7 +103,7 @@ void Solver::addObjectiveFunction (bool minimize, const vector<int>& coeffs, con
 }
   
 void Solver::addAndPropagatePBConstraint (WConstraint & c, const bool isInitial, int activity, const int LBD, bool isObj) {
-  if (!isObj) c.simplify();  
+  if (!isObj) c.simplify();   // Why don't we simplify the objective function?
   PBConstraint pc(c,isInitial,activity,LBD);  // maxCoef is the first one
   addPBConstraintCounter(pc);
   propagateInitialConstraintCounter(constraintsPB.size()-1);
@@ -120,6 +120,10 @@ void Solver::addVarName (int varNum, const string& varName) {
 
 void Solver:: set_periodic_function(int (*f) (int x) ) {
   periodic_function = f;
+}
+
+void Solver:: set_import_external_constraints_procedure (void (*f) (Solver *s ) ) {
+  import_external_constraints = f;
 }
 
 void Solver::solve (int tlimit) {  
@@ -184,6 +188,16 @@ void Solver::solve (int tlimit) {
 
     
     if (periodic_function(stats.numOfSolutionsFound >= 1 ? stats.costOfBestSolution : INT_MAX)) return;
+
+
+    if (model.currentDecisionLevel() == 0) {
+      import_external_constraints(this);
+      propagate();
+      if (conflict) {
+	updateStatusConflictAtDLZero();
+	return;
+      }
+    }
     
     int decVar = getNextDecisionVar();
     

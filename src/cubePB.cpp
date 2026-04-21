@@ -64,6 +64,23 @@ int compute_split_time_limit(int split_depth) {
     return (int)limit;
 }
 
+// If there is new information, this should add a constraint that forces the objective function to obtain a
+// better solution
+// TO BE COMPLETED!
+
+extern "C" void import_external_constraints ( Solver* solver ){
+  vector<int> coefficients, literals;
+  int rhs;
+
+  if (rhs < 1) return; // Trivial constraint
+  
+  WConstraint c(coefficients, literals, rhs);
+  c.sortByIncreasingVariable();
+  c.removeDuplicates();
+  c.sortByDecreasingCoefficient();
+  solver->addAndPropagatePBConstraint(c, true, 0, 0); // treat is as initial since we do not want the constraint that forces a better solution to be deleted
+}
+
 // Check whether a STOP message has been sent by the master.
 // If so, receive it and update the global stop flag.
 extern "C" int terminate_cb(int x) {
@@ -440,7 +457,8 @@ CubeSolveResult solve_cube(PBProblem& problem,
 
     solver.setBT0(true);
     solver.set_periodic_function(terminate_cb);
-
+    solver.set_import_external_constraints_procedure(import_external_constraints);
+    
     // Store variable names for output/debugging
     for (int varNum = 1; varNum <= nVars; ++varNum) {
         solver.addVarName(varNum, parser.var2string(varNum));
