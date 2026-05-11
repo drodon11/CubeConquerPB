@@ -1,19 +1,30 @@
 CC              = g++
 MPICC           = mpic++
+
+# Ruta a RoundingSAT/IPASIR
+RS_DIR          = ../roundingsat-dev-ipasir
+RS_BUILD        = $(RS_DIR)/build
+
+# Ruta donde esta ipasirpb.h.
+# Si ipasirpb.h esta en otra carpeta, cambia esta linea.
+RS_INC          = -I$(RS_DIR)/src
+
+# Libreria de RoundingSAT/IPASIR
+RS_LIBS         = -L$(RS_BUILD) -Wl,-rpath=$(RS_BUILD) -lrsipasir
+
 #CFLAGS          = -std=c++20 -pg -O3 -Wall
 #CFLAGS          = -std=c++20 -O3 -g -D_GLIBCXX_DEBUG
-#CFLAGS          = -std=c++20 -g -O3 -Wall -D_GLIBCXX_DEBUG #-DNDEBUG 
-#CFLAGS          = -std=c++20 -g -pg -O3 -Wall -DNDEBUG 
+#CFLAGS          = -std=c++20 -g -O3 -Wall -D_GLIBCXX_DEBUG #-DNDEBUG
+#CFLAGS          = -std=c++20 -g -pg -O3 -Wall -DNDEBUG
 #CFLAGS          = -std=c++20 -g -O0 -fno-inline -Wall -D_GLIBCXX_DEBUG
 #the following is for valgrind --leak-check=yes intsat c.lp
 #CFLAGS          = -g -O0 -Wall
 
 # for measuring time
-CFLAGS          = -std=c++20 -O3 -Wall  -DNDEBUG
+CFLAGS          = -std=c++20 -O3 -Wall -DNDEBUG $(RS_INC)
 
 # for checking correctness
-#CFLAGS          = -std=c++20 -O3 
-
+#CFLAGS          = -std=c++20 -O3 $(RS_INC)
 
 # ifndef d
 # CFLAGS += -DNDEBUG
@@ -32,7 +43,7 @@ SRCS =  main.cpp \
 	PBConstraint.cpp \
 	Propagate.cpp \
 	Solver.cpp \
-	WConstraint.cpp 
+	WConstraint.cpp
 
 OBJS = $(addsuffix .o, $(basename $(SRCS) .cpp))
 
@@ -57,7 +68,7 @@ pbsat: $(OBJS)
 	$(CC) $(CFLAGS) $(OBJS) -o pbsat
 
 cubePB: $(CUBEPB_OBJS)
-	$(MPICC) $(CFLAGS) $(CUBEPB_OBJS) -o cubePB
+	$(MPICC) $(CFLAGS) $(CUBEPB_OBJS) $(RS_LIBS) -o cubePB
 
 %.o: %.cpp
 	$(CC) $(CFLAGS) -c $*.cpp

@@ -2,6 +2,10 @@
 #include "Solver.h"
 #include "WConstraint.h"
 
+extern "C" {
+#include "ipasirpb.h"
+}
+
 #include <limits>
 #include <mpi.h>
 #include <algorithm>
@@ -19,6 +23,7 @@
 #include <fstream>
 #include <sstream>
 #include <cmath>
+#include <cstdint>
 
 using namespace std;
 
@@ -65,6 +70,10 @@ const int OBJECTIVE_PRIORITY_MAX_ABS = 1000;
 int global_best_cost;
 bool global_has_best_cost = false;
 PBProblem global_problem;
+
+// Choose solver from command line.
+// Default is your current solver.
+bool use_roundingsat = false;
 
 struct CubeTask {
     vector<int> lits;
@@ -158,7 +167,7 @@ int read_cnf_file(const string& filename, vector<vector<int>>& clauses) {
 PBProblem cnf_to_pb_problem(const vector<vector<int>>& clauses) {
     PBProblem problem;
 
-    // SAT 
+    // SAT
     problem.minimizing = true;
 
     for (const auto& clause : clauses) {
@@ -180,12 +189,21 @@ PBProblem cnf_to_pb_problem(const vector<vector<int>>& clauses) {
     return problem;
 }
 
-void add_linear_constraint_to_solver(Solver& solver,
-                                     const vector<int>& coeffs,
-                                     const vector<int>& varNums,
-                                     int rhs,
-                                     bool isGeq) {
-    vector<int> coefficients, literals;
+// Common conversion for native solver and RoundingSAT.
+// Converts either:
+//   sum coeff_i * x_i >= rhs
+// or:
+//   sum coeff_i * x_i <= rhs
+// into normalized GEQ form with positive coefficients.
+bool build_linear_geq_parts(const vector<int>& coeffs,
+                            const vector<int>& varNums,
+                            int rhs,
+                            bool isGeq,
+                            vector<int>& coefficients,
+                            vector<int>& literals,
+                            int& outRhs) {
+    coefficients.clear();
+    literals.clear();
 
     if (!isGeq) rhs = -rhs;
 
@@ -200,6 +218,7 @@ void add_linear_constraint_to_solver(Solver& solver,
             rhs += finalCoef;
             lit = -lit;
         }
+
         if (coef != 0) {
             coefficients.push_back(finalCoef);
             literals.push_back(lit);
@@ -207,9 +226,26 @@ void add_linear_constraint_to_solver(Solver& solver,
     }
 
     // Trivially true constraint
-    if (rhs < 1) return;
+    if (rhs < 1) return false;
 
-    WConstraint c(coefficients, literals, rhs);
+    outRhs = rhs;
+    return true;
+}
+
+void add_linear_constraint_to_solver(Solver& solver,
+                                     const vector<int>& coeffs,
+                                     const vector<int>& varNums,
+                                     int rhs,
+                                     bool isGeq) {
+    vector<int> coefficients, literals;
+    int outRhs = 0;
+
+    if (!build_linear_geq_parts(coeffs, varNums, rhs, isGeq,
+                                coefficients, literals, outRhs)) {
+        return;
+    }
+
+    WConstraint c(coefficients, literals, outRhs);
     c.sortByIncreasingVariable();
     c.removeDuplicates();
     c.sortByDecreasingCoefficient();
@@ -301,8 +337,215 @@ extern "C" int terminate_cb(int x) {
     return 0;
 }
 
+// Callback for RoundingSAT.
+// It only checks STOP and split timeout.
+// It does not interpret x as a cost.
+extern "C" int terminate_decision_cb(int x) {
+    (void)x;
+
+    MPI_Status status;
+    int flag = 0;
+
+    MPI_Iprobe(0, TAG_STOP, MPI_COMM_WORLD, &flag, &status);
+    if (flag) {
+        int stopmsg[2];
+        MPI_Recv(stopmsg, 2, MPI_INT, 0, TAG_STOP, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        global_stop_flag = 1;
+        return 1;
+    }
+
+    auto now = std::chrono::steady_clock::now();
+    double elapsed = std::chrono::duration<double>(now - worker_cube_start).count();
+
+    if (elapsed >= current_split_time_limit) {
+        split_requested_flag = 1;
+        return 1;
+    }
+
+    return 0;
+}
+
+// Adapter so that RoundingSAT can be used by the same cube-generation code
+// that currently expects assignedVars(), isUndefLit(), assumeAndPropagate(),
+// and backtrack().
+class RoundingSatAdapter {
+private:
+    void* solver;
+
+    // Keep objective vectors alive while setting objective.
+    vector<int64_t> objective_coeffs;
+    vector<int64_t> objective_lits;
+
+public:
+    RoundingSatAdapter() {
+        solver = ipasirpb_init();
+    }
+
+    ~RoundingSatAdapter() {
+        ipasirpb_release(solver);
+    }
+
+    void addWConstraint(WConstraint& c) {
+        c.sortByIncreasingVariable();
+        c.removeDuplicates();
+        c.sortByDecreasingCoefficient();
+
+        vector<int64_t> coeffs;
+        vector<int64_t> lits;
+
+        coeffs.reserve(c.getSize());
+        lits.reserve(c.getSize());
+
+        for (int i = 0; i < c.getSize(); ++i) {
+            coeffs.push_back((int64_t)c.getIthCoefficient(i));
+            lits.push_back((int64_t)c.getIthLiteral(i));
+        }
+
+        ipasirpb_terms64 t;
+        t.coeffs = coeffs.data();
+        t.lits = lits.data();
+        t.len = (int64_t)coeffs.size();
+        t.rhs = (uint64_t)c.getConstant();
+        t.rel = IPASIRPB_GEQ;
+
+        ipasirpb_add64(solver, t);
+    }
+
+    void addBaseProblem(PBProblem& problem) {
+        for (int i = 0; i < (int)problem.constraints.size(); ++i) {
+            addWConstraint(problem.constraints[i]);
+        }
+    }
+
+    void addCube(const vector<int>& cube) {
+        for (int lit : cube) {
+            int64_t coeff = 1;
+            int64_t l = lit;
+
+            ipasirpb_terms64 t;
+            t.coeffs = &coeff;
+            t.lits = &l;
+            t.len = 1;
+            t.rhs = 1;
+            t.rel = IPASIRPB_GEQ;
+
+            ipasirpb_add64(solver, t);
+        }
+    }
+
+    void addObjectiveFunction(PBProblem& problem) {
+        if (problem.objCoeffs.empty()) return;
+
+        objective_coeffs.clear();
+        objective_lits.clear();
+
+        objective_coeffs.reserve(problem.objCoeffs.size());
+        objective_lits.reserve(problem.objVars.size());
+
+        for (int i = 0; i < (int)problem.objCoeffs.size(); ++i) {
+            objective_coeffs.push_back((int64_t)problem.objCoeffs[i]);
+            objective_lits.push_back((int64_t)problem.objVars[i]);
+        }
+
+        ipasirpb_terms64 t;
+        t.coeffs = objective_coeffs.data();
+        t.lits = objective_lits.data();
+        t.len = (int64_t)objective_coeffs.size();
+        t.rhs = 0;
+        t.rel = IPASIRPB_MIN;
+
+        ipasirpb_set_obj64(solver, t);
+    }
+
+    void addLinearConstraint(const vector<int>& coeffs,
+                             const vector<int>& varNums,
+                             int rhs,
+                             bool isGeq) {
+        vector<int> coefficients, literals;
+        int outRhs = 0;
+
+        if (!build_linear_geq_parts(coeffs, varNums, rhs, isGeq,
+                                    coefficients, literals, outRhs)) {
+            return;
+        }
+
+        WConstraint c(coefficients, literals, outRhs);
+        addWConstraint(c);
+    }
+
+    void addObjectiveBound(PBProblem& problem, int bestCost) {
+        if (problem.objCoeffs.empty()) return;
+
+        if (problem.minimizing) {
+            addLinearConstraint(
+                problem.objCoeffs,
+                problem.objVars,
+                bestCost - 1,
+                false   // obj <= bestCost - 1
+            );
+        } else {
+            addLinearConstraint(
+                problem.objCoeffs,
+                problem.objVars,
+                bestCost + 1,
+                true    // obj >= bestCost + 1
+            );
+        }
+    }
+
+    int assignedVars() const {
+        int n = 0;
+        ipasirpb_assignedVars(solver, &n);
+        return n;
+    }
+
+    bool isTrueLit(int lit) const {
+        bool v = false;
+        ipasirpb_is_true_lit(solver, lit, &v);
+        return v;
+    }
+
+    bool isFalseLit(int lit) const {
+        bool v = false;
+        ipasirpb_is_false_lit(solver, lit, &v);
+        return v;
+    }
+
+    bool isUndefLit(int lit) const {
+        return !isTrueLit(lit) && !isFalseLit(lit);
+    }
+
+    bool assumeAndPropagate(int lit) {
+        bool conflict = false;
+        ipasirpb_assume_and_propagate(solver, lit, &conflict);
+        return !conflict;
+    }
+
+    void backtrack(int levels) {
+        ipasirpb_backjump(solver, levels);
+    }
+
+    ipasirpb_return solve(int seconds) {
+        ipasirpb_set_periodic_function(solver, terminate_decision_cb);
+        return ipasirpb_solve(solver, nullptr, 0, seconds);
+    }
+
+    int64_t primalBound() const {
+        int64_t value = 0;
+        ipasirpb_get_primal_bound64(solver, &value);
+        return value;
+    }
+
+    int64_t dualBound() const {
+        int64_t value = 0;
+        ipasirpb_get_dual_bound64(solver, &value);
+        return value;
+    }
+};
+
 // Recursive cube generation using a lookahead evalvar-style heuristic
-void generate_cubes_rec(Solver& solver,
+template <typename SolverT>
+void generate_cubes_rec(SolverT& solver,
                         const vector<int>& vars,
                         int nVars,
                         vector<int>& current,
@@ -520,7 +763,8 @@ void generate_cubes_rec(Solver& solver,
 }
 
 // Wrapper that initializes cube generation from the base solver state
-vector<vector<int>> generate_cubes(Solver& solver,
+template <typename SolverT>
+vector<vector<int>> generate_cubes(SolverT& solver,
                                    const vector<int>& vars,
                                    int nVars,
                                    bool distributed_split,
@@ -540,7 +784,8 @@ vector<vector<int>> generate_cubes(Solver& solver,
 }
 
 // Keep the old wrapper too, so local sequential generation still works
-vector<vector<int>> generate_cubes(Solver& solver,
+template <typename SolverT>
+vector<vector<int>> generate_cubes(SolverT& solver,
                                    const vector<int>& vars,
                                    int nVars) {
     return generate_cubes(solver, vars, nVars, false, 0, 1, false);
@@ -558,7 +803,7 @@ void add_base_problem(Solver& solver, PBProblem& problem) {
     solver.addObjectiveFunction(problem.minimizing, problem.objCoeffs, problem.objVars);
 }
 
-// Add a cube to the solver as unit PB constraints
+// Add a cube to the native solver as unit PB constraints
 void add_cube_constraints(Solver& solver, const vector<int>& cube) {
     for (int lit : cube) {
         vector<int> coeffs(1, 1);
@@ -574,7 +819,66 @@ void add_cube_constraints(Solver& solver, const vector<int>& cube) {
     }
 }
 
-// Solve a single cube with a fresh solver instance
+// Solve one cube with RoundingSAT.
+CubeSolveResult solve_cube_roundingsat(PBProblem& problem,
+                                        const vector<int>& cube,
+                                        int bestCost,
+                                        bool hasBestCost,
+                                        bool optimizing) {
+    CubeSolveResult res;
+    res.status = Solver::NO_SOLUTION_FOUND;
+    res.hasSolution = false;
+    res.bestCost = 0;
+
+    RoundingSatAdapter solver;
+
+    solver.addBaseProblem(problem);
+    solver.addCube(cube);
+
+    if (optimizing) {
+        solver.addObjectiveFunction(problem);
+
+        if (hasBestCost) {
+            solver.addObjectiveBound(problem, bestCost);
+        }
+    }
+
+    int tlimit = 0;
+    ipasirpb_return ans = solver.solve(tlimit);
+
+    if (optimizing) {
+        if (ans == IPASIRPB_OPT) {
+            res.status = Solver::OPTIMUM_FOUND;
+            res.hasSolution = true;
+            res.bestCost = (int)solver.primalBound();
+        } else if (ans == IPASIRPB_SAT) {
+            res.status = Solver::SOME_SOLUTION_FOUND;
+            res.hasSolution = true;
+            res.bestCost = (int)solver.primalBound();
+        } else if (ans == IPASIRPB_UNSAT) {
+            res.status = Solver::INFEASIBLE;
+            res.hasSolution = false;
+        } else {
+            res.status = Solver::NO_SOLUTION_FOUND;
+            res.hasSolution = false;
+        }
+    } else {
+        if (ans == IPASIRPB_SAT) {
+            res.status = Solver::SOME_SOLUTION_FOUND;
+            res.hasSolution = true;
+        } else if (ans == IPASIRPB_UNSAT) {
+            res.status = Solver::INFEASIBLE;
+            res.hasSolution = false;
+        } else {
+            res.status = Solver::NO_SOLUTION_FOUND;
+            res.hasSolution = false;
+        }
+    }
+
+    return res;
+}
+
+// Solve a single cube with a fresh native solver instance
 CubeSolveResult solve_cube(PBProblem& problem,
                            Parser& parser,
                            const int& nVars,
@@ -594,7 +898,7 @@ CubeSolveResult solve_cube(PBProblem& problem,
         solver.addVarName(varNum, get_var_name(parser, varNum, sat));
     }
 
-    // Load the base problem and then the cube assumptions
+
     add_base_problem(solver, problem);
     add_cube_constraints(solver, cube);
     if (hasBestCost) {
@@ -619,32 +923,58 @@ vector<vector<int>> split_cube(PBProblem& problem,
                                int bestCost,
                                bool hasBestCost,
                                bool sat) {
-    clock_t beginTime = clock();
-    Solver solver(nVars, beginTime);
-    solver.setBT0(true);
-
-    for (int varNum = 1; varNum <= nVars; ++varNum) {
-        solver.addVarName(varNum, get_var_name(parser, varNum, sat));
-    }
-
-    add_base_problem(solver, problem);
-    add_cube_constraints(solver, cube);
-    if (optimizing && hasBestCost) {
-        add_objective_bound_constraint(solver, problem, bestCost);
-    }
-
     vector<int> allVars(nVars);
     for (int i = 0; i < nVars; ++i) allVars[i] = i + 1;
 
-    // Local split: do not redistribute by worker_id here
-    vector<vector<int>> local = generate_cubes(solver, allVars, nVars, false, 0, 1, optimizing);
-    vector<vector<int>> full;
+    vector<vector<int>> local;
 
-    for (auto &sub : local) {
-        vector<int> c = cube;
-        c.insert(c.end(), sub.begin(), sub.end());
-        full.push_back(c);
+    if (use_roundingsat) {
+        RoundingSatAdapter solver;
+
+        solver.addBaseProblem(problem);
+        solver.addCube(cube);
+
+        if (optimizing) {
+            solver.addObjectiveFunction(problem);
+
+            if (hasBestCost) {
+                solver.addObjectiveBound(problem, bestCost);
+            }
+        }
+
+        local = generate_cubes(solver, allVars, nVars,
+                               false, 0, 1, optimizing);
+    } else {
+        clock_t beginTime = clock();
+        Solver solver(nVars, beginTime);
+        solver.setBT0(true);
+
+        for (int varNum = 1; varNum <= nVars; ++varNum) {
+            solver.addVarName(varNum, get_var_name(parser, varNum, sat));
+        }
+
+        add_base_problem(solver, problem);
+        add_cube_constraints(solver, cube);
+
+        if (optimizing && hasBestCost) {
+            add_objective_bound_constraint(solver, problem, bestCost);
+        }
+
+        local = generate_cubes(solver, allVars, nVars,
+                               false, 0, 1, optimizing);
     }
+
+    vector<vector<int>> full;
+    full.reserve(local.size());
+
+    for (auto& sub : local) {
+        vector<int> c;
+        c.reserve(cube.size() + sub.size());
+        c.insert(c.end(), cube.begin(), cube.end());
+        c.insert(c.end(), sub.begin(), sub.end());
+        full.push_back(std::move(c));
+    }
+
     return full;
 }
 
@@ -693,7 +1023,7 @@ int main(int argc, char** argv) {
     // Basic argument check
     if (argc < 2) {
         if (rank == 0) {
-            cerr << "Usage: mpirun -np N ./cubePB formula.opb|formula.lp|formula.cnf" << endl;
+            cerr << "Usage: mpirun -np N ./cubePB formula.opb|formula.lp|formula.cnf [--solver=native|--solver=roundingsat]" << endl;
         }
         MPI_Finalize();
         return 1;
@@ -709,6 +1039,25 @@ int main(int argc, char** argv) {
     }
 
     string filename = argv[1];
+
+    // Parse optional solver argument.
+    for (int i = 2; i < argc; ++i) {
+        string arg = argv[i];
+
+        if (arg == "--solver=roundingsat") {
+            use_roundingsat = true;
+        } else if (arg == "--solver=native") {
+            use_roundingsat = false;
+        } else {
+            if (rank == 0) {
+                cerr << "Unknown option: " << arg << endl;
+                cerr << "Usage: mpirun -np N ./cubePB formula.opb|formula.lp|formula.cnf [--solver=native|--solver=roundingsat]" << endl;
+            }
+            MPI_Finalize();
+            return 1;
+        }
+    }
+
     Parser parser;
     PBProblem problem;
     bool optimizing = true;
@@ -742,6 +1091,15 @@ int main(int argc, char** argv) {
     global_problem = problem;
     if (!sat) {
         optimizing = !problem.objCoeffs.empty();
+    }
+
+    // optimization integration supports minimization only.
+    if (optimizing && !problem.minimizing) {
+        if (rank == 0) {
+            cerr << "optimization integration currently supports minimization only." << endl;
+        }
+        MPI_Finalize();
+        return 1;
     }
 
     // Number of variables in the problem
@@ -1050,23 +1408,42 @@ int main(int argc, char** argv) {
 
     // Initial distributed generation of cubes
     {
-        clock_t beginTime = clock();
-        Solver baseSolver(nVars, beginTime);
-        baseSolver.setBT0(true);
-
         // All candidate variables for branching
         vector<int> allVars(nVars);
         for (int varNum = 1; varNum <= nVars; ++varNum) {
-            baseSolver.addVarName(varNum, get_var_name(parser, varNum, sat));
             allVars[varNum - 1] = varNum;
         }
-
-        add_base_problem(baseSolver, problem);
 
         int worker_id = rank - 1;
         int num_workers = size - 1;
 
-        vector<vector<int>> cubes = generate_cubes(baseSolver, allVars, nVars, true, worker_id, num_workers, optimizing);
+        vector<vector<int>> cubes;
+
+        if (use_roundingsat) {
+            RoundingSatAdapter baseSolver;
+
+            baseSolver.addBaseProblem(problem);
+
+            if (optimizing) {
+                baseSolver.addObjectiveFunction(problem);
+            }
+
+            cubes = generate_cubes(baseSolver, allVars, nVars,
+                                   true, worker_id, num_workers, optimizing);
+        } else {
+            clock_t beginTime = clock();
+            Solver baseSolver(nVars, beginTime);
+            baseSolver.setBT0(true);
+
+            for (int varNum = 1; varNum <= nVars; ++varNum) {
+                baseSolver.addVarName(varNum, get_var_name(parser, varNum, sat));
+            }
+
+            add_base_problem(baseSolver, problem);
+
+            cubes = generate_cubes(baseSolver, allVars, nVars,
+                                   true, worker_id, num_workers, optimizing);
+        }
 
         int header[2];
         header[0] = cube_sat_found ? 10 : 20;
@@ -1117,8 +1494,18 @@ int main(int argc, char** argv) {
         worker_cube_start = std::chrono::steady_clock::now();
 
         // Solve the assigned cube
-        CubeSolveResult cubeRes = solve_cube(problem, parser, nVars, cube,
-                                             global_best_cost, global_has_best_cost, sat);
+        CubeSolveResult cubeRes;
+
+        if (use_roundingsat) {
+            cubeRes = solve_cube_roundingsat(problem, cube,
+                                             global_best_cost,
+                                             global_has_best_cost,
+                                             optimizing);
+        } else {
+            cubeRes = solve_cube(problem, parser, nVars, cube,
+                                 global_best_cost, global_has_best_cost, sat);
+        }
+
         Solver::StatusSolver ans = cubeRes.status;
 
         // If this worker was interrupted because another process found SAT, exit
