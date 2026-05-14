@@ -12,6 +12,15 @@ RS_INC          = -I$(RS_DIR)/src
 # Libreria de RoundingSAT/IPASIR
 RS_LIBS         = -L$(RS_BUILD) -Wl,-rpath=$(RS_BUILD) -lrsipasir
 
+# Ruta a CaDiCaL
+CADICAL_DIR     = ../cadical-api/cadical-rel-3.0.0
+
+# Ruta donde esta cadical.hpp
+CADICAL_INC     = -I$(CADICAL_DIR)/src
+
+# Libreria estatica de CaDiCaL
+CADICAL_LIB     = $(CADICAL_DIR)/build/libcadical.a
+
 #CFLAGS          = -std=c++20 -pg -O3 -Wall
 #CFLAGS          = -std=c++20 -O3 -g -D_GLIBCXX_DEBUG
 #CFLAGS          = -std=c++20 -g -O3 -Wall -D_GLIBCXX_DEBUG #-DNDEBUG
@@ -21,10 +30,10 @@ RS_LIBS         = -L$(RS_BUILD) -Wl,-rpath=$(RS_BUILD) -lrsipasir
 #CFLAGS          = -g -O0 -Wall
 
 # for measuring time
-CFLAGS          = -std=c++20 -O3 -Wall -DNDEBUG $(RS_INC)
+CFLAGS          = -std=c++20 -O3 -Wall -DNDEBUG $(RS_INC) $(CADICAL_INC)
 
 # for checking correctness
-#CFLAGS          = -std=c++20 -O3 $(RS_INC)
+#CFLAGS          = -std=c++20 -O3 $(RS_INC) $(CADICAL_INC)
 
 # ifndef d
 # CFLAGS += -DNDEBUG
@@ -68,7 +77,7 @@ pbsat: $(OBJS)
 	$(CC) $(CFLAGS) $(OBJS) -o pbsat
 
 cubePB: $(CUBEPB_OBJS)
-	$(MPICC) $(CFLAGS) $(CUBEPB_OBJS) $(RS_LIBS) -o cubePB
+	$(MPICC) $(CFLAGS) $(CUBEPB_OBJS) $(RS_LIBS) $(CADICAL_LIB) -o cubePB
 
 %.o: %.cpp
 	$(CC) $(CFLAGS) -c $*.cpp

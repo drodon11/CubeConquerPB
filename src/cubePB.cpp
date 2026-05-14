@@ -6,6 +6,10 @@ extern "C" {
 #include "ipasirpb.h"
 }
 
+#include "cadical.hpp"
+#include "testing.hpp"
+#include "internal.hpp"
+
 #include <limits>
 #include <mpi.h>
 #include <algorithm>
@@ -24,6 +28,8 @@ extern "C" {
 #include <sstream>
 #include <cmath>
 #include <cstdint>
+#include <memory>
+#include <stdexcept>
 
 using namespace std;
 
@@ -72,8 +78,13 @@ bool global_has_best_cost = false;
 PBProblem global_problem;
 
 // Choose solver from command line.
-// Default is your current solver.
-bool use_roundingsat = false;
+enum class SolverBackendKind {
+    Native,
+    RoundingSAT,
+    CaDiCaL
+};
+
+SolverBackendKind selected_backend = SolverBackendKind::Native;
 
 struct CubeTask {
     vector<int> lits;
@@ -189,7 +200,6 @@ PBProblem cnf_to_pb_problem(const vector<vector<int>>& clauses) {
     return problem;
 }
 
-// Common conversion for native solver and RoundingSAT.
 // Converts either:
 //   sum coeff_i * x_i >= rhs
 // or:
@@ -365,10 +375,122 @@ extern "C" int terminate_decision_cb(int x) {
     return 0;
 }
 
-// Adapter so that RoundingSAT can be used by the same cube-generation code
-// that currently expects assignedVars(), isUndefLit(), assumeAndPropagate(),
-// and backtrack().
-class RoundingSatAdapter {
+// Solver backend interface
+
+class ISolverBackend {
+public:
+    virtual ~ISolverBackend() = default;
+
+    virtual void addBaseProblem(PBProblem& problem) = 0;
+    virtual void addCube(const vector<int>& cube) = 0;
+    virtual void addObjective(PBProblem& problem) = 0;
+    virtual void addObjectiveBound(PBProblem& problem, int bestCost) = 0;
+
+    virtual int assignedVars() const = 0;
+    virtual bool isUndefLit(int lit) const = 0;
+    virtual bool assumeAndPropagate(int lit) = 0;
+    virtual void backtrack(int levels) = 0;
+
+    virtual CubeSolveResult solve(bool optimizing, int timeLimitSeconds) = 0;
+};
+
+// Native solver backend
+
+class NativeBackend : public ISolverBackend {
+private:
+    Parser& parser;
+    int nVars;
+    bool sat;
+    clock_t beginTime;
+    Solver solver;
+
+public:
+    NativeBackend(Parser& parser_, int nVars_, bool sat_)
+        : parser(parser_),
+          nVars(nVars_),
+          sat(sat_),
+          beginTime(clock()),
+          solver(nVars_, beginTime) {
+        solver.setBT0(true);
+        solver.set_periodic_function(terminate_cb);
+        solver.set_import_external_constraints_procedure(import_external_constraints);
+
+        // Store variable names for output/debugging
+        for (int varNum = 1; varNum <= nVars; ++varNum) {
+            solver.addVarName(varNum, get_var_name(parser, varNum, sat));
+        }
+    }
+
+    void addBaseProblem(PBProblem& problem) override {
+        for (int i = 0; i < (int)problem.constraints.size(); ++i) {
+            problem.constraints[i].sortByIncreasingVariable();
+            problem.constraints[i].removeDuplicates();
+            problem.constraints[i].sortByDecreasingCoefficient();
+            solver.addAndPropagatePBConstraint(problem.constraints[i], true, 0, 0);
+        }
+
+        solver.addObjectiveFunction(problem.minimizing, problem.objCoeffs, problem.objVars);
+    }
+
+    void addCube(const vector<int>& cube) override {
+        for (int lit : cube) {
+            vector<int> coeffs(1, 1);
+            vector<int> lits(1, lit);
+            int rhs = 1;
+
+            WConstraint c(coeffs, lits, rhs);
+            c.sortByIncreasingVariable();
+            c.removeDuplicates();
+            c.sortByDecreasingCoefficient();
+
+            solver.addAndPropagatePBConstraint(c, true, 0, 0);
+        }
+    }
+
+    void addObjective(PBProblem& problem) override {
+        (void)problem;
+        // Objective already loaded in addBaseProblem().
+    }
+
+    void addObjectiveBound(PBProblem& problem, int bestCost) override {
+        add_objective_bound_constraint(solver, problem, bestCost);
+    }
+
+    int assignedVars() const override {
+        return solver.assignedVars();
+    }
+
+    bool isUndefLit(int lit) const override {
+        return solver.isUndefLit(lit);
+    }
+
+    bool assumeAndPropagate(int lit) override {
+        return solver.assumeAndPropagate(lit);
+    }
+
+    void backtrack(int levels) override {
+        solver.backtrack(levels);
+    }
+
+    CubeSolveResult solve(bool optimizing, int timeLimitSeconds) override {
+        solver.solve(timeLimitSeconds);
+
+        CubeSolveResult res;
+        res.status = solver.currentStatus();
+        res.hasSolution =
+            res.status == Solver::SOME_SOLUTION_FOUND ||
+            res.status == Solver::OPTIMUM_FOUND;
+        res.bestCost = res.hasSolution ? solver.cost_best_solution() : 0;
+
+        (void)optimizing;
+        return res;
+    }
+};
+
+
+// RoundingSAT backend
+
+class RoundingSatBackend : public ISolverBackend {
 private:
     void* solver;
 
@@ -377,11 +499,11 @@ private:
     vector<int64_t> objective_lits;
 
 public:
-    RoundingSatAdapter() {
+    RoundingSatBackend() {
         solver = ipasirpb_init();
     }
 
-    ~RoundingSatAdapter() {
+    ~RoundingSatBackend() override {
         ipasirpb_release(solver);
     }
 
@@ -411,13 +533,13 @@ public:
         ipasirpb_add64(solver, t);
     }
 
-    void addBaseProblem(PBProblem& problem) {
+    void addBaseProblem(PBProblem& problem) override {
         for (int i = 0; i < (int)problem.constraints.size(); ++i) {
             addWConstraint(problem.constraints[i]);
         }
     }
 
-    void addCube(const vector<int>& cube) {
+    void addCube(const vector<int>& cube) override {
         for (int lit : cube) {
             int64_t coeff = 1;
             int64_t l = lit;
@@ -433,7 +555,7 @@ public:
         }
     }
 
-    void addObjectiveFunction(PBProblem& problem) {
+    void addObjective(PBProblem& problem) override {
         if (problem.objCoeffs.empty()) return;
 
         objective_coeffs.clear();
@@ -473,7 +595,7 @@ public:
         addWConstraint(c);
     }
 
-    void addObjectiveBound(PBProblem& problem, int bestCost) {
+    void addObjectiveBound(PBProblem& problem, int bestCost) override {
         if (problem.objCoeffs.empty()) return;
 
         if (problem.minimizing) {
@@ -493,7 +615,7 @@ public:
         }
     }
 
-    int assignedVars() const {
+    int assignedVars() const override {
         int n = 0;
         ipasirpb_assignedVars(solver, &n);
         return n;
@@ -511,21 +633,21 @@ public:
         return v;
     }
 
-    bool isUndefLit(int lit) const {
+    bool isUndefLit(int lit) const override {
         return !isTrueLit(lit) && !isFalseLit(lit);
     }
 
-    bool assumeAndPropagate(int lit) {
+    bool assumeAndPropagate(int lit) override {
         bool conflict = false;
         ipasirpb_assume_and_propagate(solver, lit, &conflict);
         return !conflict;
     }
 
-    void backtrack(int levels) {
+    void backtrack(int levels) override {
         ipasirpb_backjump(solver, levels);
     }
 
-    ipasirpb_return solve(int seconds) {
+    ipasirpb_return solve_raw(int seconds) {
         ipasirpb_set_periodic_function(solver, terminate_decision_cb);
         return ipasirpb_solve(solver, nullptr, 0, seconds);
     }
@@ -541,7 +663,257 @@ public:
         ipasirpb_get_dual_bound64(solver, &value);
         return value;
     }
+
+    CubeSolveResult solve(bool optimizing, int timeLimitSeconds) override {
+        CubeSolveResult res;
+        res.status = Solver::NO_SOLUTION_FOUND;
+        res.hasSolution = false;
+        res.bestCost = 0;
+
+        ipasirpb_return ans = solve_raw(timeLimitSeconds);
+
+        if (optimizing) {
+            if (ans == IPASIRPB_OPT) {
+                res.status = Solver::OPTIMUM_FOUND;
+                res.hasSolution = true;
+                res.bestCost = (int)primalBound();
+            } else if (ans == IPASIRPB_SAT) {
+                res.status = Solver::SOME_SOLUTION_FOUND;
+                res.hasSolution = true;
+                res.bestCost = (int)primalBound();
+            } else if (ans == IPASIRPB_UNSAT) {
+                res.status = Solver::INFEASIBLE;
+                res.hasSolution = false;
+            } else {
+                res.status = Solver::NO_SOLUTION_FOUND;
+                res.hasSolution = false;
+            }
+        } else {
+            if (ans == IPASIRPB_SAT) {
+                res.status = Solver::SOME_SOLUTION_FOUND;
+                res.hasSolution = true;
+            } else if (ans == IPASIRPB_UNSAT) {
+                res.status = Solver::INFEASIBLE;
+                res.hasSolution = false;
+            } else {
+                res.status = Solver::NO_SOLUTION_FOUND;
+                res.hasSolution = false;
+            }
+        }
+
+        return res;
+    }
 };
+
+
+// CaDiCaL backend
+
+class CadicalTerminator : public CaDiCaL::Terminator {
+public:
+    bool terminate() override {
+        MPI_Status status;
+        int flag = 0;
+
+        MPI_Iprobe(0, TAG_STOP, MPI_COMM_WORLD, &flag, &status);
+        if (flag) {
+            int stopmsg[2];
+            MPI_Recv(stopmsg, 2, MPI_INT, 0, TAG_STOP,
+                     MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+            global_stop_flag = 1;
+            return true;
+        }
+
+        auto now = std::chrono::steady_clock::now();
+        double elapsed =
+            std::chrono::duration<double>(now - worker_cube_start).count();
+
+        if (elapsed >= current_split_time_limit) {
+            split_requested_flag = 1;
+            return true;
+        }
+
+        return false;
+    }
+};
+
+class CadicalBackend : public ISolverBackend {
+private:
+    mutable CaDiCaL::Solver solver;
+    CadicalTerminator terminator;
+    int nVars;
+    bool root_conflict = false;
+    bool conflict_pending = false;
+
+    void clearPendingConflict() {
+        CaDiCaL::Testing testing(solver);
+        testing.internal()->conflict = nullptr;
+        conflict_pending = false;
+    }
+
+    void addClauseFromConstraint(WConstraint& c) {
+        c.sortByIncreasingVariable();
+        c.removeDuplicates();
+        c.sortByDecreasingCoefficient();
+
+        vector<int> clause;
+        clause.reserve(c.getSize());
+
+        for (int i = 0; i < c.getSize(); ++i) {
+
+            clause.push_back(c.getIthLiteral(i));
+        }
+
+        solver.clause(clause);
+    }
+
+    void initialPropagate() {
+        if (root_conflict) return;
+
+        bool ok = solver.propagateX();
+        if (!ok) {
+            root_conflict = true;
+        }
+    }
+
+public:
+    explicit CadicalBackend(int nVars_) : nVars(nVars_) {
+        solver.resize(nVars);
+        solver.connect_terminator(&terminator);
+    }
+
+    ~CadicalBackend() override {
+        solver.disconnect_terminator();
+    }
+
+    void addBaseProblem(PBProblem& problem) override {
+        for (int i = 0; i < (int)problem.constraints.size(); ++i) {
+            addClauseFromConstraint(problem.constraints[i]);
+        }
+
+        initialPropagate();
+    }
+
+    void addCube(const vector<int>& cube) override {
+        for (int lit : cube) {
+            solver.clause(lit);
+        }
+
+        initialPropagate();
+    }
+
+    void addObjective(PBProblem& problem) override {
+        if (!problem.objCoeffs.empty()) {
+            throw std::runtime_error(
+                "CaDiCaL backend does not support PB objectives"
+            );
+        }
+    }
+
+    void addObjectiveBound(PBProblem& problem, int bestCost) override {
+        (void)problem;
+        (void)bestCost;
+
+        throw std::runtime_error(
+            "CaDiCaL backend does not support PB objective bounds"
+        );
+    }
+
+    int assignedVars() const override {
+        if (root_conflict) return nVars;
+        return solver.assignedVars();
+    }
+
+    bool isTrueLit(int lit) const {
+        return solver.value(lit) == 1;
+    }
+
+    bool isFalseLit(int lit) const {
+        return solver.value(lit) == 0;
+    }
+
+    bool isUndefLit(int lit) const override {
+        return solver.value(lit) == -1;
+    }
+
+    bool assumeAndPropagate(int lit) override {
+        if (root_conflict) return false;
+
+        solver.search_assume_decision(lit);
+        bool ok = solver.propagateX();
+
+        if (!ok) {
+            conflict_pending = true;
+        }
+
+        return ok;
+    }
+
+    void backtrack(int levels) override {
+        if (root_conflict) return;
+
+
+        solver.backtrackX(levels);
+
+        if (conflict_pending) clearPendingConflict();
+    }
+
+    CubeSolveResult solve(bool optimizing, int timeLimitSeconds) override {
+        (void)timeLimitSeconds;
+
+        CubeSolveResult res;
+        res.status = Solver::NO_SOLUTION_FOUND;
+        res.hasSolution = false;
+        res.bestCost = 0;
+
+        if (optimizing) {
+            throw std::runtime_error(
+                "CaDiCaL backend only supports SAT/CNF, not optimization"
+            );
+        }
+
+        if (root_conflict) {
+            res.status = Solver::INFEASIBLE;
+            res.hasSolution = false;
+            return res;
+        }
+
+        int ans = solver.solve();
+
+        if (ans == 10) {
+            res.status = Solver::SOME_SOLUTION_FOUND;
+            res.hasSolution = true;
+            res.bestCost = 0;
+        } else if (ans == 20) {
+            res.status = Solver::INFEASIBLE;
+            res.hasSolution = false;
+            res.bestCost = 0;
+        } else {
+            res.status = Solver::NO_SOLUTION_FOUND;
+            res.hasSolution = false;
+            res.bestCost = 0;
+        }
+
+        return res;
+    }
+};
+
+unique_ptr<ISolverBackend> create_solver(Parser& parser, int nVars, bool sat) {
+    if (selected_backend == SolverBackendKind::RoundingSAT) {
+        return make_unique<RoundingSatBackend>();
+    }
+
+    if (selected_backend == SolverBackendKind::CaDiCaL) {
+        if (!sat) {
+            throw std::runtime_error(
+                "--solver=cadical only supports .cnf input"
+            );
+        }
+
+        return make_unique<CadicalBackend>(nVars);
+    }
+
+    return make_unique<NativeBackend>(parser, nVars, sat);
+}
 
 // Recursive cube generation using a lookahead evalvar-style heuristic
 template <typename SolverT>
@@ -791,128 +1163,31 @@ vector<vector<int>> generate_cubes(SolverT& solver,
     return generate_cubes(solver, vars, nVars, false, 0, 1, false);
 }
 
-// Add the original PB instance to the solver
-void add_base_problem(Solver& solver, PBProblem& problem) {
-    for (int i = 0; i < (int)problem.constraints.size(); ++i) {
-        problem.constraints[i].sortByIncreasingVariable();
-        problem.constraints[i].removeDuplicates();
-        problem.constraints[i].sortByDecreasingCoefficient();
-        solver.addAndPropagatePBConstraint(problem.constraints[i], true, 0, 0);
-    }
-
-    solver.addObjectiveFunction(problem.minimizing, problem.objCoeffs, problem.objVars);
-}
-
-// Add a cube to the native solver as unit PB constraints
-void add_cube_constraints(Solver& solver, const vector<int>& cube) {
-    for (int lit : cube) {
-        vector<int> coeffs(1, 1);
-        vector<int> lits(1, lit);
-        int rhs = 1;
-
-        WConstraint c(coeffs, lits, rhs);
-        c.sortByIncreasingVariable();
-        c.removeDuplicates();
-        c.sortByDecreasingCoefficient();
-
-        solver.addAndPropagatePBConstraint(c, true, 0, 0);
-    }
-}
-
-// Solve one cube with RoundingSAT.
-CubeSolveResult solve_cube_roundingsat(PBProblem& problem,
-                                        const vector<int>& cube,
-                                        int bestCost,
-                                        bool hasBestCost,
-                                        bool optimizing) {
-    CubeSolveResult res;
-    res.status = Solver::NO_SOLUTION_FOUND;
-    res.hasSolution = false;
-    res.bestCost = 0;
-
-    RoundingSatAdapter solver;
-
-    solver.addBaseProblem(problem);
-    solver.addCube(cube);
-
-    if (optimizing) {
-        solver.addObjectiveFunction(problem);
-
-        if (hasBestCost) {
-            solver.addObjectiveBound(problem, bestCost);
-        }
-    }
-
-    int tlimit = 0;
-    ipasirpb_return ans = solver.solve(tlimit);
-
-    if (optimizing) {
-        if (ans == IPASIRPB_OPT) {
-            res.status = Solver::OPTIMUM_FOUND;
-            res.hasSolution = true;
-            res.bestCost = (int)solver.primalBound();
-        } else if (ans == IPASIRPB_SAT) {
-            res.status = Solver::SOME_SOLUTION_FOUND;
-            res.hasSolution = true;
-            res.bestCost = (int)solver.primalBound();
-        } else if (ans == IPASIRPB_UNSAT) {
-            res.status = Solver::INFEASIBLE;
-            res.hasSolution = false;
-        } else {
-            res.status = Solver::NO_SOLUTION_FOUND;
-            res.hasSolution = false;
-        }
-    } else {
-        if (ans == IPASIRPB_SAT) {
-            res.status = Solver::SOME_SOLUTION_FOUND;
-            res.hasSolution = true;
-        } else if (ans == IPASIRPB_UNSAT) {
-            res.status = Solver::INFEASIBLE;
-            res.hasSolution = false;
-        } else {
-            res.status = Solver::NO_SOLUTION_FOUND;
-            res.hasSolution = false;
-        }
-    }
-
-    return res;
-}
-
-// Solve a single cube with a fresh native solver instance
+// Solve one cube with a fresh backend instance.
+// This replaces solve_cube() and solve_cube_roundingsat().
 CubeSolveResult solve_cube(PBProblem& problem,
                            Parser& parser,
                            const int& nVars,
                            const vector<int>& cube,
                            const int& bestCost,
                            const bool& hasBestCost,
+                           bool optimizing,
                            bool sat) {
-    clock_t beginTime = clock();
-    Solver solver(nVars, beginTime);
+    auto solver = create_solver(parser, nVars, sat);
 
-    solver.setBT0(true);
-    solver.set_periodic_function(terminate_cb);
-    solver.set_import_external_constraints_procedure(import_external_constraints);
+    solver->addBaseProblem(problem);
+    solver->addCube(cube);
 
-    // Store variable names for output/debugging
-    for (int varNum = 1; varNum <= nVars; ++varNum) {
-        solver.addVarName(varNum, get_var_name(parser, varNum, sat));
-    }
+    if (optimizing) {
+        solver->addObjective(problem);
 
-
-    add_base_problem(solver, problem);
-    add_cube_constraints(solver, cube);
-    if (hasBestCost) {
-        add_objective_bound_constraint(solver, problem, bestCost);
+        if (hasBestCost) {
+            solver->addObjectiveBound(problem, bestCost);
+        }
     }
 
     int tlimit = 0;
-    solver.solve(tlimit);
-
-    CubeSolveResult res;
-    res.status = solver.currentStatus();
-    res.hasSolution = (res.status == Solver::SOME_SOLUTION_FOUND || res.status == Solver::OPTIMUM_FOUND);
-    res.bestCost = res.hasSolution ? solver.cost_best_solution() : 0;
-    return res;
+    return solver->solve(optimizing, tlimit);
 }
 
 vector<vector<int>> split_cube(PBProblem& problem,
@@ -926,43 +1201,21 @@ vector<vector<int>> split_cube(PBProblem& problem,
     vector<int> allVars(nVars);
     for (int i = 0; i < nVars; ++i) allVars[i] = i + 1;
 
-    vector<vector<int>> local;
+    auto solver = create_solver(parser, nVars, sat);
 
-    if (use_roundingsat) {
-        RoundingSatAdapter solver;
+    solver->addBaseProblem(problem);
+    solver->addCube(cube);
 
-        solver.addBaseProblem(problem);
-        solver.addCube(cube);
+    if (optimizing) {
+        solver->addObjective(problem);
 
-        if (optimizing) {
-            solver.addObjectiveFunction(problem);
-
-            if (hasBestCost) {
-                solver.addObjectiveBound(problem, bestCost);
-            }
+        if (hasBestCost) {
+            solver->addObjectiveBound(problem, bestCost);
         }
-
-        local = generate_cubes(solver, allVars, nVars,
-                               false, 0, 1, optimizing);
-    } else {
-        clock_t beginTime = clock();
-        Solver solver(nVars, beginTime);
-        solver.setBT0(true);
-
-        for (int varNum = 1; varNum <= nVars; ++varNum) {
-            solver.addVarName(varNum, get_var_name(parser, varNum, sat));
-        }
-
-        add_base_problem(solver, problem);
-        add_cube_constraints(solver, cube);
-
-        if (optimizing && hasBestCost) {
-            add_objective_bound_constraint(solver, problem, bestCost);
-        }
-
-        local = generate_cubes(solver, allVars, nVars,
-                               false, 0, 1, optimizing);
     }
+
+    vector<vector<int>> local = generate_cubes(*solver, allVars, nVars,
+                                               false, 0, 1, optimizing);
 
     vector<vector<int>> full;
     full.reserve(local.size());
@@ -1023,7 +1276,7 @@ int main(int argc, char** argv) {
     // Basic argument check
     if (argc < 2) {
         if (rank == 0) {
-            cerr << "Usage: mpirun -np N ./cubePB formula.opb|formula.lp|formula.cnf [--solver=native|--solver=roundingsat]" << endl;
+            cerr << "Usage: mpirun -np N ./cubePB formula.opb|formula.lp|formula.cnf [--solver=native|--solver=roundingsat|--solver=cadical]" << endl;
         }
         MPI_Finalize();
         return 1;
@@ -1045,13 +1298,15 @@ int main(int argc, char** argv) {
         string arg = argv[i];
 
         if (arg == "--solver=roundingsat") {
-            use_roundingsat = true;
+            selected_backend = SolverBackendKind::RoundingSAT;
         } else if (arg == "--solver=native") {
-            use_roundingsat = false;
+            selected_backend = SolverBackendKind::Native;
+        } else if (arg == "--solver=cadical") {
+            selected_backend = SolverBackendKind::CaDiCaL;
         } else {
             if (rank == 0) {
                 cerr << "Unknown option: " << arg << endl;
-                cerr << "Usage: mpirun -np N ./cubePB formula.opb|formula.lp|formula.cnf [--solver=native|--solver=roundingsat]" << endl;
+                cerr << "Usage: mpirun -np N ./cubePB formula.opb|formula.lp|formula.cnf [--solver=native|--solver=roundingsat|--solver=cadical]" << endl;
             }
             MPI_Finalize();
             return 1;
@@ -1091,6 +1346,22 @@ int main(int argc, char** argv) {
     global_problem = problem;
     if (!sat) {
         optimizing = !problem.objCoeffs.empty();
+    }
+
+    if (selected_backend == SolverBackendKind::CaDiCaL && !sat) {
+        if (rank == 0) {
+            cerr << "--solver=cadical only supports .cnf files." << endl;
+        }
+        MPI_Finalize();
+        return 1;
+    }
+
+    if (selected_backend == SolverBackendKind::CaDiCaL && optimizing) {
+        if (rank == 0) {
+            cerr << "--solver=cadical does not support optimization/objectives." << endl;
+        }
+        MPI_Finalize();
+        return 1;
     }
 
     // optimization integration supports minimization only.
@@ -1417,33 +1688,16 @@ int main(int argc, char** argv) {
         int worker_id = rank - 1;
         int num_workers = size - 1;
 
-        vector<vector<int>> cubes;
+        auto baseSolver = create_solver(parser, nVars, sat);
 
-        if (use_roundingsat) {
-            RoundingSatAdapter baseSolver;
+        baseSolver->addBaseProblem(problem);
 
-            baseSolver.addBaseProblem(problem);
-
-            if (optimizing) {
-                baseSolver.addObjectiveFunction(problem);
-            }
-
-            cubes = generate_cubes(baseSolver, allVars, nVars,
-                                   true, worker_id, num_workers, optimizing);
-        } else {
-            clock_t beginTime = clock();
-            Solver baseSolver(nVars, beginTime);
-            baseSolver.setBT0(true);
-
-            for (int varNum = 1; varNum <= nVars; ++varNum) {
-                baseSolver.addVarName(varNum, get_var_name(parser, varNum, sat));
-            }
-
-            add_base_problem(baseSolver, problem);
-
-            cubes = generate_cubes(baseSolver, allVars, nVars,
-                                   true, worker_id, num_workers, optimizing);
+        if (optimizing) {
+            baseSolver->addObjective(problem);
         }
+
+        vector<vector<int>> cubes = generate_cubes(*baseSolver, allVars, nVars,
+                                                   true, worker_id, num_workers, optimizing);
 
         int header[2];
         header[0] = cube_sat_found ? 10 : 20;
@@ -1494,17 +1748,11 @@ int main(int argc, char** argv) {
         worker_cube_start = std::chrono::steady_clock::now();
 
         // Solve the assigned cube
-        CubeSolveResult cubeRes;
-
-        if (use_roundingsat) {
-            cubeRes = solve_cube_roundingsat(problem, cube,
+        CubeSolveResult cubeRes = solve_cube(problem, parser, nVars, cube,
                                              global_best_cost,
                                              global_has_best_cost,
-                                             optimizing);
-        } else {
-            cubeRes = solve_cube(problem, parser, nVars, cube,
-                                 global_best_cost, global_has_best_cost, sat);
-        }
+                                             optimizing,
+                                             sat);
 
         Solver::StatusSolver ans = cubeRes.status;
 
