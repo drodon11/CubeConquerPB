@@ -1,0 +1,38 @@
+workflow:
+  rules:
+    - if: $CI_COMMIT_BRANCH == "master"
+      when: always
+    - if: $CI_COMMIT_BRANCH == "dev"
+      when: always
+
+build-linux:
+  stage: build
+  image: debian:unstable-slim
+  before_script:
+    - apt-get update -qq
+    - apt-get install -y -qq build-essential git cmake ninja-build libboost-all-dev libbz2-dev liblzma-dev libzstd-dev
+  script:
+    - mkdir -p build
+    - cd build
+    - cmake -GNinja -DCMAKE_BUILD_TYPE=Release -Dbuild_static=1 ..
+    - ninja
+  artifacts:
+    paths:
+      - build/roundingsat
+
+build-windows:
+  stage: build
+  tags:
+    - saas-windows-medium-amd64
+  before_script:
+    - Import-Module "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\Common7\Tools\Microsoft.VisualStudio.DevShell.dll"
+    - Enter-VsDevShell -VsInstallPath "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools" -SkipAutomaticLocation
+    - $env:VCPKG_ROOT = "C:/vcpkg"
+    - vcpkg install boost-multiprecision:x64-windows-static
+  script:
+    - cd build
+    - cmake -DCMAKE_TOOLCHAIN_FILE="$env:VCPKG_ROOT/scripts/buildsystems/vcpkg.cmake" -DVCPKG_TARGET_TRIPLET=x64-windows-static -G "NMake Makefiles" -DCMAKE_BUILD_TYPE=Release -Dbuild_static=1 ..
+    - nmake
+  artifacts:
+    paths:
+      - build/roundingsat.exe
