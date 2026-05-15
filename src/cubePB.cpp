@@ -55,7 +55,8 @@ const int RES_SPLIT = 30;
 int global_stop_flag = 0;
 int split_requested_flag = 0;
 
-const int base_split_time_limit = 240; // seconds
+//const int base_split_time_limit = 240; // seconds
+const int base_split_time_limit = 60; // seconds
 int current_split_time_limit = base_split_time_limit;
 
 // Global cutoff threshold used during cube generation
@@ -850,7 +851,7 @@ public:
 
     void backtrack(int levels) override {
         if (root_conflict) return;
-
+	
 
         solver.backtrackX(levels);
 
@@ -1333,7 +1334,7 @@ int main(int argc, char** argv) {
             MPI_Finalize();
             return 1;
         }
-
+	  
         problem = cnf_to_pb_problem(clauses);
         sat = true;
         optimizing = false;
@@ -1696,9 +1697,11 @@ int main(int argc, char** argv) {
             baseSolver->addObjective(problem);
         }
 
+	cout << "Generate cubes" << endl;
         vector<vector<int>> cubes = generate_cubes(*baseSolver, allVars, nVars,
                                                    true, worker_id, num_workers, optimizing);
 
+	cout << "Done" << endl;
         int header[2];
         header[0] = cube_sat_found ? 10 : 20;
         header[1] = (int)cubes.size();

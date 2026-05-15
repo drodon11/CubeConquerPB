@@ -1,5 +1,13 @@
 #include "Solver.h"
 
+
+
+// int assignedVars( ) const {
+//   if (roundingsat) {}
+//   else if (barcelogic) { }
+//   ///
+// }
+
 // Returns number of non-satisfied constraints (including bins, clauses and general PBs)
 // Should have a look at which measures the paper mentions
 int Solver::reducedFormulaSize ( ) const {
