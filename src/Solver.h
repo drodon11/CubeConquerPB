@@ -175,10 +175,13 @@ class Solver {
   Model                  model;
   MaxHeap                maxHeap; // for VSIDS-like decision heuristic
   vector<int>            bestPolarityForVarInObjective; // 1 --> pos, 0 --> neg, -1 --> none
+  bool                   feasibility;
   bool                   minimizing; // whether original problem was minimizing or not
                                      // this is only used to write cost or -cost
+public:
   vector<pair<int,int>>  objective; // obj function to maximize, after removing negative coefficients
                                     // repeated lits/vars and unit lits. Pairs are <coeff,lit>
+private:
   long long int          addedConstantToObjective; // obj function is: min objective + addedConstantToObjective
 
   vector<string>         varNames; // internal id to original string variable

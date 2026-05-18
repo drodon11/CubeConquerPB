@@ -767,6 +767,7 @@ private:
         solver.clause(clause);
     }
 
+ 
     void initialPropagate() {
         if (root_conflict) return;
 

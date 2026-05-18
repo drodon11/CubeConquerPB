@@ -33,6 +33,7 @@ Solver::Solver(int nVars, clock_t beginTime) :
   strat(stats,nVars), 
   model(nVars), 
   maxHeap(nVars),
+  feasibility(true),
   obj_num(-1),
   lastSolution(nVars+1,false),
   status(NO_SOLUTION_FOUND),
@@ -53,6 +54,8 @@ void Solver::addObjectiveFunction (bool minimize, const vector<int>& coeffs, con
   assert(addedConstantToObjective == 0);
   assert(coeffs.size() == vars.size());
 
+  feasibility = false;
+  
   minimizing = minimize;
   
 
@@ -127,7 +130,7 @@ void Solver:: set_import_external_constraints_procedure (void (*f) (Solver *s ) 
 }
 
 void Solver::solve (int tlimit) {  
-  bool feasibilityProblem = (objective.size() == 0);
+  bool feasibilityProblem = feasibility;
   timeLimit = tlimit;
   cout.setf(ios::fixed);
   cout.precision(2);
