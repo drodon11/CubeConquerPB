@@ -120,6 +120,7 @@ class Solver {
 public:
   int cube_time_limit;
   int (*periodic_function)(int x);
+  void good_clauses ( );
 private:
   SolveState handleConflict(CeSuper confl);
   SolveState makeDecision();

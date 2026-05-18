@@ -175,6 +175,7 @@ void Solver::conflictAnalysisAndBackjump (const WConstraint& falsifiedCtr) {
         if (dlToBackjumpTo != -1) {  // backjump!
             if (cCtr.isClause()) {  // if the conflicting is clause 	      
 
+	      if (cCtr.getSize() <= 3) learnedShortConstraints.push_back(cCtr);
 	      assert(cCtr.getSize() > 0);
                 vector<int> lemma;
                 int posUIP = -1; int numUIP = 0; int maxDL = -1;
@@ -251,6 +252,8 @@ void Solver::conflictAnalysisAndBackjump (const WConstraint& falsifiedCtr) {
                 cCtr.sortByDecreasingCoefficient();
 
                 addAndPropagatePBConstraint(cCtr, false,strat.NEW_CONSTRAINT_ACTIVITY,LBD, false);
+		if (cCtr.getSize() <= 3) learnedShortConstraints.push_back(cCtr);
+
                 strat.reportLearnPB(cCtr.getSize());
                 return;
             }

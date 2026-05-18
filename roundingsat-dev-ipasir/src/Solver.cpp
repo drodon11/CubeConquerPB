@@ -1033,4 +1033,18 @@ SolveAnswer Solver::solve() {
     //std::cout << "Set periodic function" << std::endl;
     periodic_function = f;
   }
+
+  void Solver::good_clauses ( )  {
+    for (Var v = 1; v <= getNbVars(); ++v) {
+      if (isTrue(Level,v) and Level[v] == 0) std::cout << v << std::endl;
+      if (isFalse(Level,v) and Level[-v] == 0) std::cout << -v << std::endl;
+    }
+
+    for (CRef& cr : constraints) {
+      Constr& C = ca[cr];
+      if (C.getOrigin() == Origin::LEARNED and C.size() <= 3) {
+	C.print(*this);
+      }
+    }
+  }
 }  // namespace rs

@@ -392,6 +392,9 @@ public:
     virtual bool assumeAndPropagate(int lit) = 0;
     virtual void backtrack(int levels) = 0;
 
+
+  virtual void goodClauses ( ) = 0;
+  
     virtual CubeSolveResult solve(bool optimizing, int timeLimitSeconds) = 0;
 };
 
@@ -422,6 +425,10 @@ public:
         }
     }
 
+  void goodClauses ( ) override {
+    solver.goodClauses();
+  }
+  
     void addBaseProblem(PBProblem& problem) override {
         for (int i = 0; i < (int)problem.constraints.size(); ++i) {
             problem.constraints[i].sortByIncreasingVariable();
@@ -507,6 +514,10 @@ public:
     ~RoundingSatBackend() override {
         ipasirpb_release(solver);
     }
+
+  void goodClauses ( ) override {
+    ipasirpb_good_clauses(solver);
+  }
 
     void addWConstraint(WConstraint& c) {
         c.sortByIncreasingVariable();
@@ -683,7 +694,7 @@ public:
                 res.hasSolution = true;
                 res.bestCost = (int)primalBound();
             } else if (ans == IPASIRPB_UNSAT) {
-                res.status = Solver::INFEASIBLE;
+	      res.status = Solver::INFEASIBLE;
                 res.hasSolution = false;
             } else {
                 res.status = Solver::NO_SOLUTION_FOUND;
@@ -786,6 +797,10 @@ public:
     ~CadicalBackend() override {
         solver.disconnect_terminator();
     }
+
+  void goodClauses ( ) override {
+
+  }
 
     void addBaseProblem(PBProblem& problem) override {
         for (int i = 0; i < (int)problem.constraints.size(); ++i) {
@@ -1189,7 +1204,11 @@ CubeSolveResult solve_cube(PBProblem& problem,
     }
 
     int tlimit = 0;
-    return solver->solve(optimizing, tlimit);
+    CubeSolveResult res = solver->solve(optimizing, tlimit);
+    // if (res.status != Solver::OPTIMUM_FOUND and res.status != Solver::INFEASIBLE)
+    //   solver->goodClauses();
+
+    return res;
 }
 
 vector<vector<int>> split_cube(PBProblem& problem,

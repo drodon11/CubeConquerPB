@@ -187,6 +187,7 @@ IPASIRPB_API ipasirpb_return ipasirpb_is_true_lit(void * solver, int lit, bool* 
 IPASIRPB_API ipasirpb_return ipasirpb_is_false_lit(void * solver, int lit, bool* v);
 IPASIRPB_API ipasirpb_return ipasirpb_backjump(void * solver, int levels);
 IPASIRPB_API ipasirpb_return ipasirpb_assume_and_propagate(void * solver, int lit, bool* conflict);
+IPASIRPB_API ipasirpb_return ipasirpb_good_clauses(void * solver);
 #ifdef __cplusplus
 } // closing extern "C"
 #endif

@@ -105,6 +105,12 @@ struct ipasir_solver {
   void assume(int lit) {
     assumptions.add(lit);
   }
+
+  ipasirpb_return good_clauses(){
+    solver->good_clauses();
+    return IPASIRPB_OK;
+  }
+
   ipasirpb_return decide(int lit) {
     solver->decide(lit);
     return IPASIRPB_OK;
@@ -284,4 +290,8 @@ ipasirpb_return ipasirpb_assume_and_propagate(void * solver, int lit, bool* conf
 
 ipasirpb_return ipasirpb_set_periodic_function(void * solver, int (*f) (int x) ) {
   return static_cast<rs::ipasir_solver*>(solver)->set_periodic_function(f);
+}
+
+ipasirpb_return ipasirpb_good_clauses(void *solver){
+  return static_cast<rs::ipasir_solver*>(solver)->good_clauses();
 }

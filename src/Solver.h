@@ -161,6 +161,8 @@ class Solver {
   
   vector<OccurList> positiveOccurLists;
   vector<OccurList> negativeOccurLists;
+
+  vector<WConstraint> learnedShortConstraints;
   
   vector<PBConstraint> constraintsPB;
   vector<Clause> clauses;
@@ -307,10 +309,11 @@ public:
   bool isTrueLit          (int lit) const;
   bool isFalseLit         (int lit) const;
   bool isUndefLit         (int lit) const;
-
+  void goodClauses        ( )       const;
+  
   bool assumeAndPropagate (int lit); // lit must be undef. Returns false if conflict found, true otherwise
   void backtrack          (int nLevels);
-  
+
 private:
   // DBAddition.cpp
   void addBinaryClause        ( int lit1, int lit2);

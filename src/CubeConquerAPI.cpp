@@ -8,6 +8,19 @@
 //   ///
 // }
 
+
+void Solver::goodClauses ( ) const {
+  // Unit clauses
+  for (int v = 1; v <= numVars; ++v) {
+    if (model.isTrueUnit(v)) cout << v << endl;
+    else if (model.isFalseUnit(v)) cout << -v << endl;
+  }
+
+  for (auto c : learnedShortConstraints)
+    cout << c << endl;
+}
+
+
 // Returns number of non-satisfied constraints (including bins, clauses and general PBs)
 // Should have a look at which measures the paper mentions
 int Solver::reducedFormulaSize ( ) const {

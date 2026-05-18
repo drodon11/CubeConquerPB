@@ -129,6 +129,8 @@ void Solver:: set_import_external_constraints_procedure (void (*f) (Solver *s ) 
   import_external_constraints = f;
 }
 
+// Pensar que passa si utilitzem una funcio objectiu tal que tots els seus literals siguin units
+// En aquest cas la funcio objectiu acaba essent buida, pero de fet si que hi ha un valor.....
 void Solver::solve (int tlimit) {  
   bool feasibilityProblem = feasibility;
   timeLimit = tlimit;
