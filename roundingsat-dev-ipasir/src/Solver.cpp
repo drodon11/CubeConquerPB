@@ -42,6 +42,8 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #include "auxiliary.hpp"
 #include "globals.hpp"
 
+using namespace std;
+
 namespace rs {
 
 // ---------------------------------------------------------------------
@@ -992,21 +994,24 @@ SolveAnswer Solver::solve() {
     } else {
       state = makeDecision();
     }
+
     switch(state) {
     case SolveState::SOLVING:
       break;
-    case SolveState::SAT:
     case SolveState::INPROCESSED:
+      break;
+    case SolveState::SAT:
     case SolveState::UNSAT:
     case SolveState::RESTARTED:
-    case SolveState::INTERRUPTED:
+    case SolveState::INTERRUPTED:{
       return {state, {}, lastSol};
+    }
     case SolveState::INCONSISTENT:
       // Leave cores empty for next call
       std::vector<CeSuper> result;
       std::swap(result, cores);
       return {SolveState::INCONSISTENT, result, lastSol};
-    }
+    }    
   }
 }
 

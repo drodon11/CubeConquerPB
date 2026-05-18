@@ -148,16 +148,6 @@ struct ipasir_solver {
     SolveAnswer answer = solver->solve();
     SolveState state = answer.state;
 
-    // switch(state) {
-    // case SolveState::SOLVING: {std::cout << "SOLVING" << std::endl;break;}
-    // case SolveState::SAT: {std::cout << "SAT" << std::endl;break;}
-    // case SolveState::UNSAT: {std::cout << "UNSAT" << std::endl;break;}
-    // case SolveState::INCONSISTENT: {std::cout << "INCONSISTENT" << std::endl;break;}
-    // case SolveState::INPROCESSED: {std::cout << "INPROCESSED" << std::endl;break;}
-    // case SolveState::RESTARTED: {std::cout << "RESTARTED" << std::endl;break;}
-    // case SolveState::INTERRUPTED: {std::cout << "INTERRUPTED" << std::endl;break;}
-    // }    
-
     switch(state) {
     case SolveState::SAT: return IPASIRPB_SAT;
     case SolveState::UNSAT: return IPASIRPB_UNSAT;
