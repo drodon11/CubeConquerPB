@@ -187,7 +187,9 @@ IPASIRPB_API ipasirpb_return ipasirpb_is_true_lit(void * solver, int lit, bool* 
 IPASIRPB_API ipasirpb_return ipasirpb_is_false_lit(void * solver, int lit, bool* v);
 IPASIRPB_API ipasirpb_return ipasirpb_backjump(void * solver, int levels);
 IPASIRPB_API ipasirpb_return ipasirpb_assume_and_propagate(void * solver, int lit, bool* conflict);
-IPASIRPB_API ipasirpb_return ipasirpb_good_clauses(void * solver);
+// Fills the solver's internal clause cache and returns pointers to it.
+// The returned arrays are owned by the solver and are valid until the next API call.
+IPASIRPB_API ipasirpb_return ipasirpb_good_clauses(void* solver, const ipasirpb_terms64** clauses_out, int64_t* count_out);
 #ifdef __cplusplus
 } // closing extern "C"
 #endif

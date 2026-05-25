@@ -34,12 +34,20 @@ WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 #pragma once
 
 #include <memory>
+#include <vector>
+#include <cstdint>
 #include "Env.hpp"
 #include "IntSet.hpp"
 #include "SolverStructs.hpp"
 #include "typedefs.hpp"
 
 namespace rs {
+
+struct GoodClause {
+  std::vector<int64_t> coeffs;
+  std::vector<int64_t> lits;
+  int64_t rhs;
+};
 
 struct Logger;
 enum class WatchStatus;
@@ -120,7 +128,7 @@ class Solver {
 public:
   int cube_time_limit;
   int (*periodic_function)(int x);
-  void good_clauses ( );
+  std::vector<GoodClause> good_clauses();
 private:
   SolveState handleConflict(CeSuper confl);
   SolveState makeDecision();

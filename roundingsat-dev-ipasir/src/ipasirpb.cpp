@@ -59,6 +59,10 @@ struct ipasir_solver {
   std::vector<int64_t> core_vars;
   size_t next_core = 0;
 
+  // Cache for good_clauses results (solver owns the memory)
+  std::vector<rs::GoodClause> _gc_data;
+  std::vector<ipasirpb_terms64> _gc_terms;
+
   ipasir_solver() {
     env = std::make_unique<Env>();
     env->cePools = std::make_unique<ConstrExpPools>(*env);
@@ -106,8 +110,21 @@ struct ipasir_solver {
     assumptions.add(lit);
   }
 
-  ipasirpb_return good_clauses(){
-    solver->good_clauses();
+  ipasirpb_return good_clauses(const ipasirpb_terms64** clauses_out, int64_t* count_out) {
+    _gc_data  = solver->good_clauses();
+    _gc_terms.clear();
+    _gc_terms.reserve(_gc_data.size());
+    for (const auto& gc : _gc_data) {
+      ipasirpb_terms64 t;
+      t.coeffs = const_cast<int64_t*>(gc.coeffs.data());
+      t.lits   = const_cast<int64_t*>(gc.lits.data());
+      t.len    = (int64_t)gc.coeffs.size();
+      t.rel    = IPASIRPB_GEQ;
+      t.rhs    = gc.rhs;
+      _gc_terms.push_back(t);
+    }
+    *clauses_out = _gc_terms.empty() ? nullptr : _gc_terms.data();
+    *count_out   = (int64_t)_gc_terms.size();
     return IPASIRPB_OK;
   }
 
@@ -292,6 +309,6 @@ ipasirpb_return ipasirpb_set_periodic_function(void * solver, int (*f) (int x) )
   return static_cast<rs::ipasir_solver*>(solver)->set_periodic_function(f);
 }
 
-ipasirpb_return ipasirpb_good_clauses(void *solver){
-  return static_cast<rs::ipasir_solver*>(solver)->good_clauses();
+ipasirpb_return ipasirpb_good_clauses(void* solver, const ipasirpb_terms64** clauses_out, int64_t* count_out) {
+  return static_cast<rs::ipasir_solver*>(solver)->good_clauses(clauses_out, count_out);
 }

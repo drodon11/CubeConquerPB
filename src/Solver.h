@@ -310,6 +310,7 @@ public:
   bool isFalseLit         (int lit) const;
   bool isUndefLit         (int lit) const;
   void goodClauses        ( )       const;
+  vector<WConstraint> collectGoodClauses ( ) const;
   
   bool assumeAndPropagate (int lit); // lit must be undef. Returns false if conflict found, true otherwise
   void backtrack          (int nLevels);
@@ -345,5 +346,3 @@ private:
   // WConstraint.cpp [pensar si moure tot aqui]
   
   };
-  
-

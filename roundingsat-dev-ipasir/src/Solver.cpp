@@ -1034,17 +1034,22 @@ SolveAnswer Solver::solve() {
     periodic_function = f;
   }
 
-  void Solver::good_clauses ( )  {
-    for (Var v = 1; v <= getNbVars(); ++v) {
-      if (isTrue(Level,v) and Level[v] == 0) std::cout << v << std::endl;
-      if (isFalse(Level,v) and Level[-v] == 0) std::cout << -v << std::endl;
-    }
+  std::vector<GoodClause> Solver::good_clauses() {
+    std::vector<GoodClause> result;
 
     for (CRef& cr : constraints) {
       Constr& C = ca[cr];
       if (C.getOrigin() == Origin::LEARNED and C.size() <= 3) {
-	C.print(*this);
+        GoodClause gc;
+        gc.rhs = static_cast<int64_t>(C.degree());
+        for (unsigned int i = 0; i < C.size(); ++i) {
+          gc.coeffs.push_back(static_cast<int64_t>(C.coef(i)));
+          gc.lits.push_back(static_cast<int64_t>(C.lit(i)));
+        }
+        result.push_back(std::move(gc));
       }
     }
+
+    return result;
   }
 }  // namespace rs

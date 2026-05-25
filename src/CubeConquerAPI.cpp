@@ -20,6 +20,10 @@ void Solver::goodClauses ( ) const {
     cout << c << endl;
 }
 
+vector<WConstraint> Solver::collectGoodClauses ( ) const {
+  return learnedShortConstraints;
+}
+
 
 // Returns number of non-satisfied constraints (including bins, clauses and general PBs)
 // Should have a look at which measures the paper mentions

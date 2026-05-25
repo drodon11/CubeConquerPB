@@ -223,7 +223,7 @@ void Solver::conflictAnalysisAndBackjump (const WConstraint& falsifiedCtr) {
                 else {  // lemma is clause
                     Clause cl(lemma,false,strat.NEW_CONSTRAINT_ACTIVITY,LBD);
                     addClause(cl);
-                    strat.reportLearnClause(lemma.size());         
+                    strat.reportLearnClause(lemma.size());
                     setTrueDueToReason(lemma[0],Reason(clauses.size()-1, Reason::CLAUSE));
                 }
                 return;
