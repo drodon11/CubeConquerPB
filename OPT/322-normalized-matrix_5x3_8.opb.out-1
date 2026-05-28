@@ -1,0 +1,3 @@
+node906
+Working dir: /home/usuaris.new/hector.rodon/CubeConquerPB/src
+Running: mpirun -np 48 ./cubePB /home/usuaris.new/solver/PB-25-OPT-LIN-PlaneBenchmarks/322-normalized-matrix_5x3_8.opb

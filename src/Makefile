@@ -57,6 +57,9 @@ SRCS =  main.cpp \
 OBJS = $(addsuffix .o, $(basename $(SRCS) .cpp))
 
 CUBEPB_OBJS = cubePB.o \
+	NativeBackend.o \
+	RoundingSatBackend.o \
+	CadicalBackend.o \
 	Branching.o \
 	Cleanup.o \
 	ConflictAnalysis.o \
@@ -84,6 +87,15 @@ cubePB: $(CUBEPB_OBJS)
 
 cubePB.o: cubePB.cpp
 	$(MPICC) $(CFLAGS) -c cubePB.cpp
+
+NativeBackend.o: NativeBackend.cpp NativeBackend.h ISolverBackend.h
+	$(CC) $(CFLAGS) -c NativeBackend.cpp
+
+RoundingSatBackend.o: RoundingSatBackend.cpp RoundingSatBackend.h ISolverBackend.h
+	$(CC) $(CFLAGS) -c RoundingSatBackend.cpp
+
+CadicalBackend.o: CadicalBackend.cpp CadicalBackend.h ISolverBackend.h
+	$(MPICC) $(CFLAGS) -c CadicalBackend.cpp
 
 clean:
 	rm -f *.o intsatSolution.lp intsatSolution.pl pbsat cubePB
