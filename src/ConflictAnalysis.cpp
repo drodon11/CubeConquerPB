@@ -155,6 +155,12 @@ void Solver::conflictAnalysisAndBackjump (const WConstraint& falsifiedCtr) {
 	  // printConstraint(rCtr);
 	  // cout << "Gives ";
 	  // printConstraint(cut);
+	  if (overflow) {
+	    fixRoundingProblemSAT(litInReasonCtr,rCtr);
+	    fixRoundingProblemSAT(litInConflictingCtr, cCtr );
+	    overflow = applyCut( confVar, cCtr, rCtr, cut, clash, isInconsistentCut );
+	    assert(not overflow);
+	  }
 	}
         assert(overflow or constraintIsFalse(cut)); 
         increaseScoresOfVars(rCtr);
