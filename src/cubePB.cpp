@@ -466,6 +466,15 @@ extern "C" int terminate_cb(int x) {
 extern "C" int terminate_decision_cb(int x) {
     (void)x;
 
+    // Once a STOP has been received, keep returning 1 on every call. The STOP
+    // message is consumed only once, but RoundingSAT's optimize loop checks the
+    // periodic function at the top of each iteration: a single return-1 only
+    // makes the inner solve() bail out with state SOLVING (treated as
+    // INPROCESSED), so without this sticky flag the loop would resume. The
+    // original worker has no split timeout (current_split_time_limit = INT_MAX)
+    // and no inter-cube receive, so this is its only way to stop.
+    if (global_stop_flag) return 1;
+
     MPI_Status status;
     int flag = 0;
 

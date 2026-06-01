@@ -459,14 +459,20 @@ EagerVar<SMALL, LARGE>::EagerVar(const ObjRewrite<SMALL, LARGE>& super) :
 
 template <typename SMALL, typename LARGE>
 bool EagerVar<SMALL, LARGE>::rewrite() {
+  // Gap closed: the lower bound added in ObjRewrite::rewrite() now meets or
+  // exceeds the upper bound (numAux < 0), so no better solution exists. This
+  // can be triggered by an externally injected upper bound (e.g. a shared
+  // incumbent in cube-and-conquer); the original assert(numAux >= 0) did not
+  // anticipate it. Conclude here instead of resizing with a negative count.
+  long long numAux = upperBound - static_cast<int>(cardCore->getDegree());
+  if (numAux < 0) return true;
+
   if (logger and upperBound < static_cast<int>(cardCore->vars.size())) {
     coreUBID = opt.getCoreUB(cardCore, cost, upperBound);
   }
 
   // add auxiliary variables
   long long oldN = solver.getNbVars();
-  long long numAux = upperBound - static_cast<int>(cardCore->getDegree());
-  assert(numAux >= 0);
   long long newN = oldN + numAux;
   solver.setNbVars(newN);
   newVars.resize(numAux);
