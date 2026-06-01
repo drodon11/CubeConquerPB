@@ -180,7 +180,7 @@ struct ipasir_solver {
     }
     return IPASIRPB_UNKNOWN;
   }
-  ipasirpb_return set_periodic_function(int (*f) (int x)) {
+  ipasirpb_return set_periodic_function(int (*f) (int LB, int UB)) {
     solver->set_periodic_function(f);
     return IPASIRPB_UNKNOWN;
   }
@@ -305,7 +305,7 @@ ipasirpb_return ipasirpb_assume_and_propagate(void * solver, int lit, bool* conf
 }
 
 
-ipasirpb_return ipasirpb_set_periodic_function(void * solver, int (*f) (int x) ) {
+ipasirpb_return ipasirpb_set_periodic_function(void * solver, int (*f) (int LB, int UB) ) {
   return static_cast<rs::ipasir_solver*>(solver)->set_periodic_function(f);
 }
 

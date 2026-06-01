@@ -127,7 +127,7 @@ class Solver {
 
 public:
   int cube_time_limit;
-  int (*periodic_function)(int x);
+  int (*periodic_function)(int LB, int UB);
   std::vector<GoodClause> good_clauses();
 private:
   SolveState handleConflict(CeSuper confl);
@@ -161,7 +161,7 @@ private:
   bool isTrueX(int lit);
   bool isFalseX(int lit);
   void setTimeLimit(int seconds);
-  void set_periodic_function(int (*f) (int x) );
+  void set_periodic_function(int (*f) (int LB, int UB) );
   /**
    * @return SolveAnswer.state:
    *  UNSAT if root inconsistency detected

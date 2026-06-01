@@ -463,10 +463,10 @@ extern "C" int terminate_cb(int x) {
 // Callback for RoundingSAT.
 // It only checks STOP and split timeout.
 // It does not interpret x as a cost.
-extern "C" int terminate_decision_cb(int x) {
-    (void)x;
+extern "C" int terminate_decision_cb(int LB, int UB) {
+    (void)LB;
 
-    if (x < INT_MAX) cout << "Somebody reported solution of cost " << x << endl;
+    if (UB < INT_MAX) cout << "We have interval [" << LB << "  ," << UB << "]" << endl;
     
     // Once a STOP has been received, keep returning 1 on every call. The STOP
     // message is consumed only once, but RoundingSAT's optimize loop checks the

@@ -10,7 +10,7 @@ bool build_linear_geq_parts(const vector<int>& coeffs,
                              vector<int>& coefficients,
                              vector<int>& literals,
                              int& outRhs);
-extern "C" int terminate_decision_cb(int x);
+extern "C" int terminate_decision_cb(int LB, int UB);
 
 RoundingSatBackend::RoundingSatBackend() {
     solver = ipasirpb_init();

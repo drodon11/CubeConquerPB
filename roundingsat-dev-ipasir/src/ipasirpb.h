@@ -179,7 +179,7 @@ IPASIRPB_API ipasirpb_return ipasirpb_get_dual_bound64 (void * solver, int64_t* 
 IPASIRPB_API ipasirpb_return ipasirpb_get_dual_bound (void * solver, ipasirpb_bigint* value);
 
   // ALBERT
-IPASIRPB_API ipasirpb_return ipasirpb_set_periodic_function(void * solver, int (*f) (int x) );
+IPASIRPB_API ipasirpb_return ipasirpb_set_periodic_function(void * solver, int (*f) (int LB, int UB) );
 IPASIRPB_API ipasirpb_return ipasirpb_decide(void * solver, int lit);
 IPASIRPB_API ipasirpb_return ipasirpb_propagate(void * solver, bool* conflict);
 IPASIRPB_API ipasirpb_return ipasirpb_assignedVars(void * solver, int* n);
