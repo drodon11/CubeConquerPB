@@ -41,6 +41,7 @@ public:
     bool assumeAndPropagate(int lit) override;
     void backtrack(int levels) override;
 
+    int nonSatisfiedConstraints ( ) override;
     std::vector<WConstraint> goodClauses() override;
     CubeSolveResult solve(bool optimizing, int timeLimitSeconds) override;
 };

@@ -460,6 +460,33 @@ extern "C" int terminate_cb(int x) {
     return 0;
 }
 
+extern "C" int report_external_UB ( ) {
+  static int last_imported_best = INT_MAX;
+  static int sent_learned_count = 0;
+  
+  int rank;
+  MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+
+  int dummy = 0;
+  int best_from_master = INT_MAX;
+
+  MPI_Send(&dummy, 1, MPI_INT, 0, TAG_BEST_REQUEST, MPI_COMM_WORLD);
+  MPI_Status best_recv_status;
+  MPI_Probe(0, MPI_ANY_TAG, MPI_COMM_WORLD, &best_recv_status);
+  // if (best_recv_status.MPI_TAG == TAG_STOP) {
+  //   int stopmsg[2];
+  //   MPI_Recv(stopmsg, 2, MPI_INT, 0, TAG_STOP, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+  //   global_stop_flag = 1;
+  //   return;
+  // }
+  MPI_Recv(&best_from_master, 1, MPI_INT, 0, TAG_BEST_REPLY, MPI_COMM_WORLD, MPI_STATUS_IGNORE);    
+    
+  if (best_from_master != INT_MAX && best_from_master < last_imported_best) {
+    return best_from_master;
+  }
+  return INT_MAX;
+}
+
 // Callback for RoundingSAT.
 // It only checks STOP and split timeout.
 // It does not interpret x as a cost.

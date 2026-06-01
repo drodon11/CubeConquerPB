@@ -1034,6 +1034,27 @@ SolveAnswer Solver::solve() {
     periodic_function = f;
   }
 
+  void Solver::set_best_external_UB_function(int (*f) ( )){
+    best_external_UB  = f;
+  }
+
+  int Solver::number_non_satisfied_constraints ( ) {
+    int non_satisfied = 0;
+    int t = 0;
+    for (CRef& cr : constraints) {
+      ++t;
+      Constr& C = ca[cr];
+      __int128 sum = -static_cast<__int128>(C.degree());
+      for (unsigned int i = 0; i < C.size(); ++i) {
+	__int128 lit = static_cast<__int128>(C.lit(i));
+	if (isTrue(Level,lit))
+	  sum += static_cast<__int128>(C.coef(i));
+      }
+      if (sum < 0) ++non_satisfied;   
+    }
+    return non_satisfied;
+  }
+  
   std::vector<GoodClause> Solver::good_clauses() {
     std::vector<GoodClause> result;
 

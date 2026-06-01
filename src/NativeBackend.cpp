@@ -98,3 +98,7 @@ CubeSolveResult NativeBackend::solve(bool optimizing, int timeLimitSeconds) {
     (void)optimizing;
     return res;
 }
+
+int NativeBackend:: nonSatisfiedConstraints ( ) {
+  return solver.reducedFormulaSize();
+}

@@ -180,6 +180,7 @@ IPASIRPB_API ipasirpb_return ipasirpb_get_dual_bound (void * solver, ipasirpb_bi
 
   // ALBERT
 IPASIRPB_API ipasirpb_return ipasirpb_set_periodic_function(void * solver, int (*f) (int LB, int UB) );
+IPASIRPB_API ipasirpb_return ipasirpb_set_best_external_UB_function (void * solver, int (*f) () );  
 IPASIRPB_API ipasirpb_return ipasirpb_decide(void * solver, int lit);
 IPASIRPB_API ipasirpb_return ipasirpb_propagate(void * solver, bool* conflict);
 IPASIRPB_API ipasirpb_return ipasirpb_assignedVars(void * solver, int* n);
@@ -190,6 +191,7 @@ IPASIRPB_API ipasirpb_return ipasirpb_assume_and_propagate(void * solver, int li
 // Fills the solver's internal clause cache and returns pointers to it.
 // The returned arrays are owned by the solver and are valid until the next API call.
 IPASIRPB_API ipasirpb_return ipasirpb_good_clauses(void* solver, const ipasirpb_terms64** clauses_out, int64_t* count_out);
+IPASIRPB_API ipasirpb_return ipasirpb_number_non_satisfied_constraints(void * solver, int* num);
 #ifdef __cplusplus
 } // closing extern "C"
 #endif

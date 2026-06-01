@@ -39,6 +39,8 @@ public:
     virtual bool assumeAndPropagate(int lit) = 0;
     virtual void backtrack(int levels) = 0;
 
+    virtual int  nonSatisfiedConstraints ( ) = 0;
+  
     virtual std::vector<WConstraint> goodClauses() = 0;
 
     virtual CubeSolveResult solve(bool optimizing, int timeLimitSeconds) = 0;

@@ -147,6 +147,7 @@ class Optimization : public IOptimization {
 
   bool handleInconsistency(std::vector<CeSuper>& cores);
   bool handleNewSolution(const std::vector<Lit>& sol);
+  bool handleNewExternalUB(int UB);
   bool harden();
 
   OptState optimize();

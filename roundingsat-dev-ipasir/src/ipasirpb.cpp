@@ -110,6 +110,11 @@ struct ipasir_solver {
     assumptions.add(lit);
   }
 
+  ipasirpb_return number_non_satisfied_constraints (int* num) {
+    *num = solver->number_non_satisfied_constraints();
+    return IPASIRPB_OK;
+  }
+  
   ipasirpb_return good_clauses(const ipasirpb_terms64** clauses_out, int64_t* count_out) {
     _gc_data  = solver->good_clauses();
     _gc_terms.clear();
@@ -184,6 +189,12 @@ struct ipasir_solver {
     solver->set_periodic_function(f);
     return IPASIRPB_UNKNOWN;
   }
+  
+  ipasirpb_return set_best_external_UB_function(int (*f) ()) {
+    solver->set_best_external_UB_function(f);
+    return IPASIRPB_UNKNOWN;
+  }
+  
   ipasirpb_return optimize(int seconds) {
     // We ignore user assumptions for now
     objective->removeUnitsAndZeroes(solver->getLevel(), solver->getPos(), false);
@@ -309,6 +320,14 @@ ipasirpb_return ipasirpb_set_periodic_function(void * solver, int (*f) (int LB, 
   return static_cast<rs::ipasir_solver*>(solver)->set_periodic_function(f);
 }
 
+ipasirpb_return ipasirpb_set_best_external_UB_function (void * solver, int (*f) ( ) ){
+  return static_cast<rs::ipasir_solver*>(solver)->set_best_external_UB_function(f);
+}
+
 ipasirpb_return ipasirpb_good_clauses(void* solver, const ipasirpb_terms64** clauses_out, int64_t* count_out) {
   return static_cast<rs::ipasir_solver*>(solver)->good_clauses(clauses_out, count_out);
+}
+
+ipasirpb_return ipasirpb_number_non_satisfied_constraints(void * solver, int* num) {
+  return static_cast<rs::ipasir_solver*>(solver)->number_non_satisfied_constraints(num);
 }

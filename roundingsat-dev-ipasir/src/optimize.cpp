@@ -354,6 +354,25 @@ bool Optimization<SMALL, LARGE>::handleNewSolution(const std::vector<Lit>& sol) 
 }
 
 template <typename SMALL, typename LARGE>
+bool Optimization<SMALL, LARGE>::handleNewExternalUB (int UB) {
+  if (UB >= upper_bound) return false; // search continues
+  if (UB < lower_bound) return true; // Search can terminate
+
+  upper_bound = UB;
+  assert(upper_bound < prev_val);
+
+  CePtr<ConstrExp<SMALL, LARGE>> aux = cePools.take<SMALL, LARGE>();
+  origObj->copyTo(aux);
+  aux->invert();
+  aux->addRhs(-upper_bound + 1);
+  solver.dropExternal(lastUpperBound, true, true);
+  std::tie(lastUpperBoundUnprocessed, lastUpperBound) = solver.addConstraint(aux, Origin::UPPERBOUND);
+  objImproveValid = false;
+  if (lastUpperBound == ID_Unsat) return true; // Search terminates
+  return false;
+}
+
+template <typename SMALL, typename LARGE>
 ID Optimization<SMALL, LARGE>::getObjToCore(Ce32 cardCore, SMALL cost, ID refToOrigID, LARGE lower_bound) {
   assert(logger);
   assert(refToOrigID != ID_Undef);
@@ -551,6 +570,12 @@ OptState Optimization<SMALL, LARGE>::optimize() {
       else return OptState::UNKNOWN;
     }
 
+    int external_UB = solver.best_external_UB();
+    if (external_UB < upper_bound) {
+      std::cout << "WE have an internal UB of  " << upper_bound << " and externally we have " << external_UB << std::endl;
+      if (handleNewExternalUB(external_UB)) return makeAnswer();
+    }
+    
     if (reply != SolveState::INPROCESSED && reply != SolveState::RESTARTED) {
       printObjBounds();
     }

@@ -188,3 +188,7 @@ CubeSolveResult CadicalBackend::solve(bool optimizing, int timeLimitSeconds) {
 
     return res;
 }
+
+int CadicalBackend::nonSatisfiedConstraints ( ) {
+  return 0;
+}
