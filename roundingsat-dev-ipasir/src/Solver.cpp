@@ -982,7 +982,7 @@ SolveAnswer Solver::solve() {
     if (asynch_interrupt) throw asynchInterrupt;
     if (options.time_limit.get() != -1.0 && stats.getTime() > options.time_limit.get()) throw timeoutInterrupt;
     //    if (cube_time_limit != -1 && stats.getTime() > cube_time_limit) throw timeoutInterrupt;
-    if (periodic_function(3)) {
+    if (periodic_function(INT_MAX)) {
       return {SolveState::SOLVING, {}, lastSol};
     }
 				

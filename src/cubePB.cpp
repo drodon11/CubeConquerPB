@@ -466,6 +466,8 @@ extern "C" int terminate_cb(int x) {
 extern "C" int terminate_decision_cb(int x) {
     (void)x;
 
+    if (x < INT_MAX) cout << "Somebody reported solution of cost " << x << endl;
+    
     // Once a STOP has been received, keep returning 1 on every call. The STOP
     // message is consumed only once, but RoundingSAT's optimize loop checks the
     // periodic function at the top of each iteration: a single return-1 only

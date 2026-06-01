@@ -543,7 +543,7 @@ OptState Optimization<SMALL, LARGE>::optimize() {
       throw timeoutInterrupt;
     }
     //    if (solver.cube_time_limit != -1 && stats.getTime() > solver.cube_time_limit) throw timeoutInterrupt;
-    if (solver.periodic_function(3)) {
+    if (solver.periodic_function(solver.foundSolution() ?  int(upper_bound) : INT_MAX    )) {
       if (solver.foundSolution()) {
 	return OptState::SAT;
       }
