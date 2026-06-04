@@ -274,6 +274,10 @@ int Solver::cost_best_solution ( ) const {
   return stats.costOfBestSolution;
 }
 
+vector<bool> Solver::best_solution ( ) const {
+  return lastSolution;
+}
+
 Solver::StatusSolver Solver::currentStatus ( ) const {
   return status;
 }

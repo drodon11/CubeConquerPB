@@ -216,6 +216,7 @@ public: // all in Solver.cpp
   void   set_periodic_function(int (*f) (int x) );
   void   set_import_external_constraints_procedure(void (*f) (Solver *) );
   int    cost_best_solution ( ) const;
+  vector<bool> best_solution ( )  const;
   
   StatusSolver currentStatus ( ) const;
   void    printStats() const;
