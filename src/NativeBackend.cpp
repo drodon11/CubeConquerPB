@@ -69,6 +69,12 @@ void NativeBackend::addObjectiveBound(PBProblem& problem, int bestCost) {
     add_objective_bound_constraint(solver, problem, bestCost);
 }
 
+void NativeBackend::addObjectiveLowerBound(PBProblem& problem, int lb) {
+    // Lower-bound sharing is RoundingSAT-only; no-op for the native backend.
+    (void)problem;
+    (void)lb;
+}
+
 int NativeBackend::assignedVars() const {
     return solver.assignedVars();
 }

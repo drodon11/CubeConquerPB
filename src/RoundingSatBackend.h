@@ -11,10 +11,6 @@ class RoundingSatBackend : public ISolverBackend {
 private:
     void* solver;
 
-    // Keep objective vectors alive while setting objective.
-    std::vector<int64_t> objective_coeffs;
-    std::vector<int64_t> objective_lits;
-
     void addWConstraint(WConstraint& c);
     void addLinearConstraint(const std::vector<int>& coeffs,
                              const std::vector<int>& varNums,
@@ -35,6 +31,7 @@ public:
     void addCube(const std::vector<int>& cube) override;
     void addObjective(PBProblem& problem) override;
     void addObjectiveBound(PBProblem& problem, int bestCost) override;
+    void addObjectiveLowerBound(PBProblem& problem, int lb) override;
 
     int assignedVars() const override;
     bool isUndefLit(int lit) const override;

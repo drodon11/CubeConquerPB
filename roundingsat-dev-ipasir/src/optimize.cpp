@@ -562,7 +562,8 @@ OptState Optimization<SMALL, LARGE>::optimize() {
       throw timeoutInterrupt;
     }
     //    if (solver.cube_time_limit != -1 && stats.getTime() > solver.cube_time_limit) throw timeoutInterrupt;
-    if (solver.periodic_function(int(lower_bound),
+    if (solver.periodic_function &&
+        solver.periodic_function(int(lower_bound),
 				 solver.foundSolution() ?  int(upper_bound) : INT_MAX    )) {
       if (solver.foundSolution()) {
 	return OptState::SAT;
@@ -570,10 +571,11 @@ OptState Optimization<SMALL, LARGE>::optimize() {
       else return OptState::UNKNOWN;
     }
 
-    int external_UB = solver.best_external_UB();
-    if (external_UB < upper_bound) {
-      std::cout << "WE have an internal UB of  " << upper_bound << " and externally we have " << external_UB << std::endl;
-      if (handleNewExternalUB(external_UB)) return makeAnswer();
+    if (solver.best_external_UB) {
+      int external_UB = solver.best_external_UB();
+      if (external_UB < upper_bound) {
+        if (handleNewExternalUB(external_UB)) return makeAnswer();
+      }
     }
     
     if (reply != SolveState::INPROCESSED && reply != SolveState::RESTARTED) {

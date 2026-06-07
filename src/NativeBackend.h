@@ -22,6 +22,7 @@ public:
     void addCube(const std::vector<int>& cube) override;
     void addObjective(PBProblem& problem) override;
     void addObjectiveBound(PBProblem& problem, int bestCost) override;
+    void addObjectiveLowerBound(PBProblem& problem, int lb) override;
 
     int assignedVars() const override;
     bool isUndefLit(int lit) const override;

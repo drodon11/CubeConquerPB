@@ -52,6 +52,10 @@ namespace rs {
   Solver::Solver(Env& env) : env(env), logger(env.logger.get()), cePools(*env.cePools), lpSolver(env.lpSolver), order_heap(activity) {
   ca.capacity(1024 * 1024);  // 4MB
   cube_time_limit = -1;
+  // Optional callbacks: null until explicitly registered. Guard before calling
+  // so an unregistered callback is a no-op instead of a jump to garbage.
+  periodic_function = nullptr;
+  best_external_UB = nullptr;
 }
 
 void Solver::setNbVars(long long nvars, bool orig) {
@@ -982,7 +986,7 @@ SolveAnswer Solver::solve() {
     if (asynch_interrupt) throw asynchInterrupt;
     if (options.time_limit.get() != -1.0 && stats.getTime() > options.time_limit.get()) throw timeoutInterrupt;
     //    if (cube_time_limit != -1 && stats.getTime() > cube_time_limit) throw timeoutInterrupt;
-    if (periodic_function(INT_MIN,INT_MAX)) {
+    if (periodic_function && periodic_function(INT_MIN,INT_MAX)) {
       return {SolveState::SOLVING, {}, lastSol};
     }
 				

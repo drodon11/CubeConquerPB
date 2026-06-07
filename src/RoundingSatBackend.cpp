@@ -101,8 +101,8 @@ void RoundingSatBackend::addCube(const vector<int>& cube) {
 void RoundingSatBackend::addObjective(PBProblem& problem) {
     if (problem.objCoeffs.empty()) return;
 
-    objective_coeffs.clear();
-    objective_lits.clear();
+    std::vector<int64_t> objective_coeffs;
+    std::vector<int64_t> objective_lits;
 
     objective_coeffs.reserve(problem.objCoeffs.size());
     objective_lits.reserve(problem.objVars.size());
@@ -158,6 +158,18 @@ void RoundingSatBackend::addObjectiveBound(PBProblem& problem, int bestCost) {
     }
 }
 
+void RoundingSatBackend::addObjectiveLowerBound(PBProblem& problem, int lb) {
+    // Only for minimization
+    if (problem.objCoeffs.empty() || !problem.minimizing) return;
+
+    addLinearConstraint(
+        problem.objCoeffs,
+        problem.objVars,
+        lb,
+        true    // obj >= lb
+    );
+}
+
 int RoundingSatBackend::assignedVars() const {
     int n = 0;
     ipasirpb_assignedVars(solver, &n);
@@ -192,7 +204,7 @@ void RoundingSatBackend::backtrack(int levels) {
 
 ipasirpb_return RoundingSatBackend::solve_raw(int seconds) {
     ipasirpb_set_periodic_function(solver, terminate_decision_cb);
-    ipasirpb_set_best_external_UB_function(solver, report_external_UB);
+
     return ipasirpb_solve(solver, nullptr, 0, seconds);
 }
 

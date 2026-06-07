@@ -15,6 +15,7 @@ inline constexpr int TAG_INIT_CUBE      = 6;
 inline constexpr int TAG_BEST_REQUEST   = 7;
 inline constexpr int TAG_BEST_REPLY     = 8;
 inline constexpr int TAG_LEARNED_UPDATE = 9;
+inline constexpr int TAG_BOUNDS         = 10; // worker -> master: {LB, UB} report
 
 struct CubeSolveResult {
     Solver::StatusSolver status;
@@ -33,6 +34,9 @@ public:
     virtual void addCube(const std::vector<int>& cube) = 0;
     virtual void addObjective(PBProblem& problem) = 0;
     virtual void addObjectiveBound(PBProblem& problem, int bestCost) = 0;
+    // Inject a known global lower bound on the objective (obj >= lb). Only
+    // RoundingSAT implements it; the other backends treat it as a no-op.
+    virtual void addObjectiveLowerBound(PBProblem& problem, int lb) = 0;
 
     virtual int assignedVars() const = 0;
     virtual bool isUndefLit(int lit) const = 0;

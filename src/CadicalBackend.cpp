@@ -14,9 +14,7 @@ extern chrono::steady_clock::time_point worker_cube_start;
 extern int current_split_time_limit;
 extern vector<vector<int>> global_cnf_clauses;
 
-// ---------------------------------------------------------------------------
-// CadicalTerminator
-// ---------------------------------------------------------------------------
+
 
 bool CadicalTerminator::terminate() {
     MPI_Status status;
@@ -119,6 +117,12 @@ void CadicalBackend::addObjectiveBound(PBProblem& problem, int bestCost) {
     throw runtime_error(
         "CaDiCaL backend does not support PB objective bounds"
     );
+}
+
+void CadicalBackend::addObjectiveLowerBound(PBProblem& problem, int lb) {
+    // Lower-bound sharing is RoundingSAT-only; no-op here.
+    (void)problem;
+    (void)lb;
 }
 
 int CadicalBackend::assignedVars() const {
