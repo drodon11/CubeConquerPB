@@ -1,6 +1,7 @@
 build/
 bin/
 *.o
+*.d
 *.out
 *.exe
 *.a
@@ -9,3 +10,7 @@ bin/
 *.swp
 *.tmp
 .DS_Store
+.claude/
+src/pbsat
+src/cubePB
+src/cnf-pb
