@@ -54,6 +54,8 @@ void Solver::addObjectiveFunction (bool minimize, const vector<int>& coeffs, con
   assert(addedConstantToObjective == 0);
   assert(coeffs.size() == vars.size());
 
+  if (coeffs.empty()) return;   // no objective declared: this stays a feasibility problem
+
   feasibility = false;
   
   minimizing = minimize;

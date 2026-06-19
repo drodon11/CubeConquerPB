@@ -14,7 +14,8 @@ bool build_linear_geq_parts(const vector<int>& coeffs,
 extern "C" int terminate_decision_cb(int LB, int UB);
 extern "C" int report_external_UB ( );
 
-RoundingSatBackend::RoundingSatBackend() {
+RoundingSatBackend::RoundingSatBackend(int nVars_) {
+    (void)nVars_;
     solver = ipasirpb_init();
 }
 
@@ -204,6 +205,7 @@ void RoundingSatBackend::backtrack(int levels) {
 
 ipasirpb_return RoundingSatBackend::solve_raw(int seconds) {
     ipasirpb_set_periodic_function(solver, terminate_decision_cb);
+    ipasirpb_set_best_external_UB_function(solver, report_external_UB);
 
     return ipasirpb_solve(solver, nullptr, 0, seconds);
 }
@@ -264,4 +266,14 @@ int RoundingSatBackend::nonSatisfiedConstraints ( ) {
   int n;
   ipasirpb_number_non_satisfied_constraints(solver, &n);
   return n;
+}
+
+vector<int> RoundingSatBackend::getSolution(int nVars_) {
+    vector<int> sol(nVars_ + 1, 0);
+    for (int v = 1; v <= nVars_; ++v) {
+        bool value = false;
+        ipasirpb_litval(solver, (int64_t)v, &value);
+        sol[v] = value ? 1 : 0;
+    }
+    return sol;
 }

@@ -1,15 +1,10 @@
 #pragma once
 
 #include "ISolverBackend.h"
-#include <ctime>
 
 // Native solver backend
 class NativeBackend : public ISolverBackend {
 private:
-    Parser& parser;
-    int nVars;
-    bool sat;
-    clock_t beginTime;
     Solver solver;
 
     void addConstraint(WConstraint c, bool isInitial);
@@ -31,5 +26,6 @@ public:
 
     int  nonSatisfiedConstraints ( ) override;
     std::vector<WConstraint> goodClauses() override;
+    std::vector<int> getSolution(int nVars) override;
     CubeSolveResult solve(bool optimizing, int timeLimitSeconds) override;
 };

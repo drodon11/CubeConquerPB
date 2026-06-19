@@ -1,4 +1,5 @@
 #include "NativeBackend.h"
+#include <ctime>
 
 using namespace std;
 
@@ -9,18 +10,14 @@ extern "C" int terminate_cb(int x);
 extern "C" void import_external_constraints(Solver* solver);
 
 NativeBackend::NativeBackend(Parser& parser_, int nVars_, bool sat_)
-    : parser(parser_),
-      nVars(nVars_),
-      sat(sat_),
-      beginTime(clock()),
-      solver(nVars_, beginTime) {
+    : solver(nVars_, clock()) {
     solver.setBT0(true);
     solver.set_periodic_function(terminate_cb);
     solver.set_import_external_constraints_procedure(import_external_constraints);
 
     // Store variable names for output/debugging
-    for (int varNum = 1; varNum <= nVars; ++varNum) {
-        solver.addVarName(varNum, get_var_name(parser, varNum, sat));
+    for (int varNum = 1; varNum <= nVars_; ++varNum) {
+        solver.addVarName(varNum, get_var_name(parser_, varNum, sat_));
     }
 }
 
@@ -107,4 +104,12 @@ CubeSolveResult NativeBackend::solve(bool optimizing, int timeLimitSeconds) {
 
 int NativeBackend:: nonSatisfiedConstraints ( ) {
   return solver.reducedFormulaSize();
+}
+
+vector<int> NativeBackend::getSolution(int nVars_) {
+    vector<bool> bsol = solver.best_solution();
+    vector<int> sol(nVars_ + 1, 0);
+    for (int v = 1; v <= nVars_ && v < (int)bsol.size(); ++v)
+        sol[v] = bsol[v] ? 1 : 0;
+    return sol;
 }

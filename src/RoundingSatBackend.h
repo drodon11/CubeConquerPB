@@ -23,7 +23,7 @@ private:
     bool isFalseLit(int lit) const;
 
 public:
-    RoundingSatBackend();
+    explicit RoundingSatBackend(int nVars_);
     ~RoundingSatBackend() override;
 
     void addBaseProblem(PBProblem& problem) override;
@@ -40,5 +40,6 @@ public:
 
     int nonSatisfiedConstraints ( ) override;
     std::vector<WConstraint> goodClauses() override;
+    std::vector<int> getSolution(int nVars) override;
     CubeSolveResult solve(bool optimizing, int timeLimitSeconds) override;
 };

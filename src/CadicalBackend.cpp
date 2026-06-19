@@ -41,9 +41,6 @@ bool CadicalTerminator::terminate() {
     return false;
 }
 
-// ---------------------------------------------------------------------------
-// CadicalBackend
-// ---------------------------------------------------------------------------
 
 CadicalBackend::CadicalBackend(int nVars_) : nVars(nVars_) {
     solver.resize(nVars);
@@ -84,7 +81,8 @@ vector<WConstraint> CadicalBackend::goodClauses() {
     return {};
 }
 
-void CadicalBackend::addBaseProblem(PBProblem& /*problem*/) {
+void CadicalBackend::addBaseProblem(PBProblem& problem) {
+    (void)problem;
     for (const auto& clause : global_cnf_clauses)
         solver.clause(clause);
     initialPropagate();
@@ -195,4 +193,11 @@ CubeSolveResult CadicalBackend::solve(bool optimizing, int timeLimitSeconds) {
 
 int CadicalBackend::nonSatisfiedConstraints ( ) {
   return 0;
+}
+
+vector<int> CadicalBackend::getSolution(int nVars_) {
+    vector<int> sol(nVars_ + 1, 0);
+    for (int v = 1; v <= nVars_; ++v)
+        sol[v] = isTrueLit(v) ? 1 : 0;
+    return sol;
 }

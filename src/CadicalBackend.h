@@ -42,5 +42,6 @@ public:
 
     int nonSatisfiedConstraints ( ) override;
     std::vector<WConstraint> goodClauses() override;
+    std::vector<int> getSolution(int nVars) override;
     CubeSolveResult solve(bool optimizing, int timeLimitSeconds) override;
 };
